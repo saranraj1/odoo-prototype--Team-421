@@ -88,6 +88,7 @@ class TestGoldenPathE2E:
         sample_quotation: Any,
     ):
         """Executes and validates all 20 Acceptance Criteria end-to-end."""
+        print("[STEP 1: AC-1 - Read Customer Profile]")
 
         # ---------------------------------------------------------------------
         # STEP 1: AC-1 - Read Customer Profile
@@ -185,6 +186,7 @@ class TestGoldenPathE2E:
         # ---------------------------------------------------------------------
         # STEP 8: AC-8 - Customer Portal Counter-Offer Negotiation Submission
         # ---------------------------------------------------------------------
+        print("[STEP 8: AC-8 - Customer Portal Negotiation]")
         portal_controller = PortalController()
         portal_user_acme = mock_odoo_env["res.users"].create({
             "id": 101,
@@ -260,6 +262,7 @@ class TestGoldenPathE2E:
         # STEP 11: AC-11 - Commercial Governance Review & Formal Approval
         # ---------------------------------------------------------------------
         # Sales Manager / Finance evaluates and approves the negotiation
+        mock_odoo_env.user = mock_odoo_env["res.users"].browse(1)
         active_negotiation.action_under_review()
         assert active_negotiation.status == "under_review"
 
@@ -333,6 +336,7 @@ class TestGoldenPathE2E:
         # ---------------------------------------------------------------------
         # STEP 16: AC-16 - Authorized Order Confirmation
         # ---------------------------------------------------------------------
+        print("[STEP 16: AC-16 - Authorized Order Confirmation]")
         # Quotation is approved and unlocked; confirmation succeeds
         confirm_res = sales_adapter.confirm_order(sample_quotation.id)
         assert confirm_res["success"] is True
@@ -351,6 +355,7 @@ class TestGoldenPathE2E:
         # ---------------------------------------------------------------------
         # STEP 17: AC-17 - Customer Invoice Generation
         # ---------------------------------------------------------------------
+        print("[STEP 17: AC-17 - Customer Invoice Generation]")
         inv_res = integration_service.create_invoice(sample_quotation.id)
         assert "invoice_id" in inv_res
         inv_id = inv_res["invoice_id"]

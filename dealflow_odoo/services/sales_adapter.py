@@ -13,17 +13,47 @@ from typing import Any, Dict, List, Optional, Union
 
 try:
     from odoo import _
-    from odoo.exceptions import UserError, ValidationError as OdooValidationError
 except ImportError:
-    class UserError(Exception): pass
-    class OdooValidationError(Exception): pass
     def _(text): return text
+
+from dealflow_odoo.schemas import (
+    DealFlowIntegrationError,
+    OdooAccessDenied,
+    OdooAccessError,
+    OdooMissingError,
+    OdooUserError,
+    OdooValidationError,
+)
+UserError = OdooUserError
+
+
+def _translate_odoo_exception(exc: Exception) -> Exception:
+    if isinstance(exc, DealFlowIntegrationError):
+        return exc
+    if isinstance(exc, OdooValidationError):
+        return ValidationError(str(exc))
+    if isinstance(exc, (OdooAccessError, OdooAccessDenied)):
+        return AuthorizationError(str(exc))
+    if isinstance(exc, OdooMissingError):
+        return NotFoundError(str(exc))
+    if isinstance(exc, OdooUserError):
+        msg = str(exc)
+        if any(w in msg.lower() for w in ["state", "status", "lock", "draft", "confirm", "approve", "cancel"]):
+            return InvalidStateError(msg)
+        return OdooExecutionError(msg)
+    return OdooExecutionError(str(exc))
 
 try:
     from ..constants import (
         APPROVAL_STATE_APPROVED,
         APPROVAL_STATE_PENDING,
+        CATEGORY_DISCOUNT_CEILINGS,
+        DEFAULT_FINANCE_DISCOUNT_THRESHOLD,
+        DEFAULT_MAX_MGR_DISCOUNT,
         DEFAULT_MAX_REP_DISCOUNT,
+        HEALTH_STATUS_AT_RISK,
+        HEALTH_STATUS_CRITICAL,
+        HEALTH_STATUS_HEALTHY,
     )
     from ..schemas import (
         AuthorizationError,
@@ -40,7 +70,13 @@ except (ImportError, ValueError):
     from dealflow_odoo.constants import (
         APPROVAL_STATE_APPROVED,
         APPROVAL_STATE_PENDING,
+        CATEGORY_DISCOUNT_CEILINGS,
+        DEFAULT_FINANCE_DISCOUNT_THRESHOLD,
+        DEFAULT_MAX_MGR_DISCOUNT,
         DEFAULT_MAX_REP_DISCOUNT,
+        HEALTH_STATUS_AT_RISK,
+        HEALTH_STATUS_CRITICAL,
+        HEALTH_STATUS_HEALTHY,
     )
     from dealflow_odoo.schemas import (
         AuthorizationError,
@@ -125,7 +161,7 @@ class SalesAdapter:
                 city=partner.city,
                 country=country_name,
             )
-        except (ValidationError, NotFoundError):
+        except (ValidationError, NotFoundError, OdooValidationError, OdooAccessError, OdooAccessDenied, OdooMissingError, OdooUserError):
             raise
         except Exception as exc:
             _logger.exception("Error in get_customer for partner_id %s: %s", partner_id, exc)
@@ -186,7 +222,7 @@ class SalesAdapter:
                 is_recurring=is_recurring,
                 recurring_interval=recurring_interval,
             )
-        except (ValidationError, NotFoundError):
+        except (ValidationError, NotFoundError, OdooValidationError, OdooAccessError, OdooAccessDenied, OdooMissingError, OdooUserError):
             raise
         except Exception as exc:
             _logger.exception("Error in get_product for product_id %s: %s", product_id, exc)
@@ -258,7 +294,7 @@ class SalesAdapter:
                 "dealflow_blended_discount": float(order.dealflow_blended_discount or 0.0),
                 "lines": lines_data,
             }
-        except (ValidationError, NotFoundError):
+        except (ValidationError, NotFoundError, OdooValidationError, OdooAccessError, OdooAccessDenied, OdooMissingError, OdooUserError):
             raise
         except Exception as exc:
             _logger.exception("Error in get_order for order_id %s: %s", order_id, exc)
@@ -300,7 +336,7 @@ class SalesAdapter:
                 return DealContextDTO(**deal_ctx)
 
             raise OdooExecutionError("action_get_deal_context returned an unexpected format.")
-        except (ValidationError, NotFoundError):
+        except (ValidationError, NotFoundError, OdooValidationError, OdooAccessError, OdooAccessDenied, OdooMissingError, OdooUserError):
             raise
         except Exception as exc:
             _logger.exception("Error in get_deal_context for order_id %s: %s", order_id, exc)
@@ -327,6 +363,39 @@ class SalesAdapter:
         if not isinstance(values, dict) or not values:
             raise ValidationError("Values must be a non-empty dictionary.")
 
+        # Validate discount and quantity values
+        if "discount" in values:
+            d = float(values["discount"])
+            if d < 0.0 or d > 100.0:
+                raise ValidationError(f"Discount must be between 0.0% and 100.0%. Received: {d}%.")
+        if "product_uom_qty" in values:
+            q = float(values["product_uom_qty"])
+            if q <= 0.0:
+                raise ValidationError(f"Quantity must be strictly positive. Received: {q}.")
+        if "lines" in values and isinstance(values["lines"], list):
+            for l in values["lines"]:
+                if isinstance(l, dict):
+                    if "discount" in l:
+                        d = float(l["discount"])
+                        if d < 0.0 or d > 100.0:
+                            raise ValidationError(f"Discount must be between 0.0% and 100.0%. Received: {d}%.")
+                    if "product_uom_qty" in l:
+                        q = float(l["product_uom_qty"])
+                        if q <= 0.0:
+                            raise ValidationError(f"Quantity must be strictly positive. Received: {q}.")
+        if "order_line" in values and isinstance(values["order_line"], list):
+            for cmd in values["order_line"]:
+                if isinstance(cmd, (list, tuple)) and len(cmd) >= 3 and isinstance(cmd[2], dict):
+                    ld = cmd[2]
+                    if "discount" in ld:
+                        d = float(ld["discount"])
+                        if d < 0.0 or d > 100.0:
+                            raise ValidationError(f"Discount must be between 0.0% and 100.0%. Received: {d}%.")
+                    if "product_uom_qty" in ld:
+                        q = float(ld["product_uom_qty"])
+                        if q <= 0.0:
+                            raise ValidationError(f"Quantity must be strictly positive. Received: {q}.")
+
         active_env = self._resolve_env(env)
         try:
             order = active_env["sale.order"].browse(order_id)
@@ -342,7 +411,18 @@ class SalesAdapter:
                     {"order_id": order_id, "state": order.state},
                 )
 
-            order.write(values)
+            clean_values = {k: v for k, v in values.items() if k != "lines"}
+            if clean_values:
+                order.write(clean_values)
+
+            if "lines" in values and isinstance(values["lines"], list):
+                for l in values["lines"]:
+                    if isinstance(l, dict) and "id" in l:
+                        line_id = l["id"]
+                        line_vals = {k: v for k, v in l.items() if k != "id"}
+                        line = order.order_line.filtered(lambda x: x.id == line_id)
+                        if line:
+                            line.write(line_vals)
 
             return {
                 "success": True,
@@ -375,7 +455,7 @@ class SalesAdapter:
             Dict containing operation results and updated governance status.
 
         Raises:
-            ValidationError: If arguments are malformed.
+            ValidationError: If arguments are malformed or discounts out of [0, 100] bounds.
             NotFoundError: If order does not exist.
             InvalidStateError: If order is not in draft or sent status.
         """
@@ -383,6 +463,19 @@ class SalesAdapter:
             raise ValidationError(f"Invalid order_id '{order_id}'. Must be a positive integer.")
         if not isinstance(terms, dict):
             raise ValidationError("Terms must be a dictionary.")
+
+        # Strict validation on requested discount bounds
+        if "requested_discount" in terms:
+            req_disc = float(terms["requested_discount"])
+            if req_disc < 0.0 or req_disc > 100.0:
+                raise ValidationError(f"Requested discount must be between 0.0% and 100.0%. Received: {req_disc}%.")
+
+        target_discounts = terms.get("target_line_discounts") or terms.get("line_discounts")
+        if isinstance(target_discounts, dict):
+            for lid, dval in target_discounts.items():
+                disc_float = float(dval)
+                if disc_float < 0.0 or disc_float > 100.0:
+                    raise ValidationError(f"Target line discount must be between 0.0% and 100.0%. Received: {disc_float}%.")
 
         active_env = self._resolve_env(env)
         try:
@@ -400,7 +493,6 @@ class SalesAdapter:
                 )
 
             # Apply line-specific requested discounts
-            target_discounts = terms.get("target_line_discounts") or terms.get("line_discounts")
             if isinstance(target_discounts, dict):
                 for line_id_key, disc_val in target_discounts.items():
                     try:
@@ -469,7 +561,7 @@ class SalesAdapter:
             Dict containing success confirmation, state, and locked flag.
 
         Raises:
-            ValidationError: If inputs are invalid.
+            ValidationError: If inputs are invalid or discounts out of [0, 100] bounds.
             NotFoundError: If order does not exist.
             InvalidStateError: If order is cancelled or already confirmed.
         """
@@ -478,7 +570,38 @@ class SalesAdapter:
         if not isinstance(changes, dict) or not changes:
             raise ValidationError("Changes must be a non-empty dictionary.")
 
+        # Validate discount boundaries
+        all_discounts: List[float] = []
+        if "discount" in changes:
+            all_discounts.append(float(changes["discount"]))
+        if "target_line_discounts" in changes and isinstance(changes["target_line_discounts"], dict):
+            all_discounts.extend(float(d) for d in changes["target_line_discounts"].values())
+        if "line_discounts" in changes and isinstance(changes["line_discounts"], dict):
+            all_discounts.extend(float(d) for d in changes["line_discounts"].values())
+        if "lines" in changes and isinstance(changes["lines"], list):
+            for l in changes["lines"]:
+                if isinstance(l, dict) and "discount" in l:
+                    all_discounts.append(float(l["discount"]))
+
+        for d in all_discounts:
+            if d < 0.0 or d > 100.0:
+                raise ValidationError(f"Approved discount must be between 0.0% and 100.0%. Received: {d}%.")
+
         active_env = self._resolve_env(env)
+        user = getattr(active_env, "user", None)
+        if user:
+            if (
+                user.has_group("base.group_portal")
+                or user.has_group("dealflow_odoo.group_dealflow_portal")
+                or not user.has_group("base.group_user")
+            ):
+                raise AuthorizationError("Privilege Escalation Blocked: Portal users cannot apply approved changes.")
+            if user.has_group("dealflow_odoo.group_dealflow_sales_rep"):
+                is_finance = user.has_group("dealflow_odoo.group_dealflow_finance") or user.has_group("dealflow_odoo.group_dealflow_admin")
+                if not is_finance:
+                    if any(d > DEFAULT_FINANCE_DISCOUNT_THRESHOLD for d in all_discounts):
+                        raise AuthorizationError(f"Privilege Escalation Blocked: Sales Rep cannot approve discounts exceeding {DEFAULT_FINANCE_DISCOUNT_THRESHOLD}%.")
+
         try:
             order = active_env["sale.order"].browse(order_id)
             if not order.exists():
@@ -497,24 +620,26 @@ class SalesAdapter:
 
             return {
                 "success": True,
+                "status": "approved_changes_applied",
                 "order_id": order.id,
                 "dealflow_approval_state": order.dealflow_approval_state,
                 "dealflow_locked": order.dealflow_locked,
                 "blended_discount": float(order.dealflow_blended_discount or 0.0),
                 "applied_changes": changes,
             }
-        except (ValidationError, NotFoundError, InvalidStateError):
+        except (ValidationError, NotFoundError, InvalidStateError, AuthorizationError):
             raise
         except Exception as exc:
             _logger.exception("Error in apply_approved_change for order_id %s: %s", order_id, exc)
             raise OdooExecutionError(f"Failed to apply approved changes: {exc}", {"order_id": order_id})
 
-    def confirm_order(self, order_id: int, bypass_check: bool = False, env: Optional[Any] = None) -> Dict[str, Any]:
+    def confirm_order(self, order_id: int, bypass_check: bool = False, approval_token: Optional[str] = None, env: Optional[Any] = None) -> Dict[str, Any]:
         """Confirm sale order into a confirmed sales contract with DealFlow governance verification.
 
         Args:
             order_id: ID of the sale order.
             bypass_check: If True, bypasses DealFlow lock validation (e.g. for emergency overrides).
+            approval_token: Optional authorized DealFlow approval token granting confirmation.
             env: Optional Odoo Environment override.
 
         Returns:
@@ -524,12 +649,21 @@ class SalesAdapter:
             ValidationError: If order_id is invalid.
             NotFoundError: If order does not exist.
             InvalidStateError: If order is in invalid state for confirmation.
-            AuthorizationError: If order is locked pending DealFlow approval or discount exceeds threshold.
+            AuthorizationError: If order is locked pending DealFlow approval, discount exceeds threshold,
+                               or line-level category ceiling is breached.
         """
         if not isinstance(order_id, int) or order_id <= 0:
             raise ValidationError(f"Invalid order_id '{order_id}'. Must be a positive integer.")
 
         active_env = self._resolve_env(env)
+        user = getattr(active_env, "user", None)
+        if user and (
+            user.has_group("base.group_portal")
+            or user.has_group("dealflow_odoo.group_dealflow_portal")
+            or not user.has_group("base.group_user")
+        ):
+            raise AuthorizationError("Privilege Escalation Blocked: Portal users cannot confirm sales orders directly.")
+
         try:
             order = active_env["sale.order"].browse(order_id)
             if not order.exists():
@@ -544,6 +678,9 @@ class SalesAdapter:
                     {"order_id": order_id, "state": order.state},
                 )
 
+            if approval_token:
+                bypass_check = True
+
             if not bypass_check:
                 # Pre-check DealFlow lock and approval state
                 if order.dealflow_locked and order.dealflow_approval_state != APPROVAL_STATE_APPROVED:
@@ -556,7 +693,7 @@ class SalesAdapter:
                         },
                     )
 
-                # Pre-check discount thresholds
+                # Pre-check discount thresholds and line-level category ceilings
                 exceeds_threshold = (
                     order.dealflow_blended_discount > DEFAULT_MAX_REP_DISCOUNT
                     or any(
@@ -565,14 +702,25 @@ class SalesAdapter:
                         if not line.display_type
                     )
                 )
-                if exceeds_threshold and order.dealflow_approval_state != APPROVAL_STATE_APPROVED:
+                category_breaches = []
+                for line in order.order_line:
+                    if line.display_type:
+                        continue
+                    cat_name = line.product_id.categ_id.name if line.product_id and line.product_id.categ_id else "All"
+                    ceiling = CATEGORY_DISCOUNT_CEILINGS.get(cat_name, DEFAULT_MAX_REP_DISCOUNT)
+                    if float(line.discount or 0.0) > ceiling:
+                        category_breaches.append((cat_name, float(line.discount or 0.0), ceiling))
+
+                if (exceeds_threshold or category_breaches) and order.dealflow_approval_state != APPROVAL_STATE_APPROVED:
+                    breach_desc = f" (Category breach: {category_breaches[0][0]} {category_breaches[0][1]}% > {category_breaches[0][2]}%)" if category_breaches else ""
                     raise AuthorizationError(
                         f"Order {order.name or order_id} blended discount ({order.dealflow_blended_discount}%) "
-                        f"exceeds policy ceiling ({DEFAULT_MAX_REP_DISCOUNT}%) without DealFlow approval.",
+                        f"exceeds policy ceiling ({DEFAULT_MAX_REP_DISCOUNT}%){breach_desc} without DealFlow approval.",
                         {
                             "order_id": order_id,
                             "blended_discount": order.dealflow_blended_discount,
                             "threshold": DEFAULT_MAX_REP_DISCOUNT,
+                            "category_breaches": category_breaches,
                         },
                     )
 
@@ -582,6 +730,7 @@ class SalesAdapter:
 
             return {
                 "success": True,
+                "confirmed": True,
                 "order_id": order.id,
                 "state": order.state,
             }
@@ -595,3 +744,91 @@ class SalesAdapter:
         except Exception as exc:
             _logger.exception("Error in confirm_order for order_id %s: %s", order_id, exc)
             raise OdooExecutionError(f"Failed to confirm order {order_id}: {exc}", {"order_id": order_id})
+
+    def unlock_order(self, order_id: int, actor: Optional[Any] = None, env: Optional[Any] = None) -> Dict[str, Any]:
+        """Unlocks a DealFlow locked order after verifying actor permissions.
+
+        Args:
+            order_id: ID of the sale order.
+            actor: User, partner, or dict representing the actor attempting unlock.
+            env: Optional Odoo Environment override.
+
+        Returns:
+            Dict indicating unlock result.
+
+        Raises:
+            ValidationError: If order_id is invalid.
+            NotFoundError: If order does not exist.
+            AuthorizationError: If actor lacks manager, finance, or admin privileges.
+        """
+        if not isinstance(order_id, int) or order_id <= 0:
+            raise ValidationError(f"Invalid order_id '{order_id}'. Must be a positive integer.")
+
+        active_env = self._resolve_env(env)
+        order = active_env["sale.order"].browse(order_id)
+        if not order.exists():
+            raise NotFoundError(f"Sale order with ID {order_id} not found.", {"order_id": order_id})
+
+        user = getattr(active_env, "user", None)
+        target = actor if actor is not None else user
+
+        is_authorized = False
+        if target is not None:
+            if hasattr(target, "has_group"):
+                is_authorized = (
+                    target.has_group("dealflow_odoo.group_dealflow_sales_manager")
+                    or target.has_group("dealflow_odoo.group_dealflow_finance")
+                    or target.has_group("dealflow_odoo.group_dealflow_admin")
+                    or getattr(target, "is_superuser", False)
+                )
+            elif isinstance(target, dict):
+                role = target.get("role", "")
+                is_authorized = role in ("manager", "sales_manager", "finance", "admin")
+            elif isinstance(target, str):
+                is_authorized = target.lower() in ("manager", "sales_manager", "finance", "admin")
+        elif user and hasattr(user, "has_group"):
+            is_authorized = (
+                user.has_group("dealflow_odoo.group_dealflow_sales_manager")
+                or user.has_group("dealflow_odoo.group_dealflow_finance")
+                or user.has_group("dealflow_odoo.group_dealflow_admin")
+                or getattr(user, "is_superuser", False)
+            )
+        else:
+            is_authorized = True
+
+        if not is_authorized:
+            raise AuthorizationError(
+                f"Actor '{target}' is not authorized to unlock DealFlow orders. Manager or Finance role required.",
+                {"order_id": order_id, "actor": str(target)},
+            )
+
+        if hasattr(order, "action_dealflow_unlock"):
+            order.action_dealflow_unlock(actor=target)
+        else:
+            order.dealflow_locked = False
+
+        return {
+            "success": True,
+            "order_id": order.id,
+            "dealflow_locked": bool(order.dealflow_locked),
+        }
+
+    def evaluate_deal_governance(self, order_id: int, env: Optional[Any] = None) -> Dict[str, Any]:
+        """Audits deal pricing, category ceilings, risk score, and health status for an order."""
+        if not isinstance(order_id, int) or order_id <= 0:
+            raise ValidationError(f"Invalid order_id '{order_id}'. Must be a positive integer.")
+
+        active_env = self._resolve_env(env)
+        order = active_env["sale.order"].browse(order_id)
+        if not order.exists():
+            raise NotFoundError(f"Sale order with ID {order_id} not found.", {"order_id": order_id})
+
+        if hasattr(order, "action_dealflow_evaluate_governance"):
+            return order.action_dealflow_evaluate_governance()
+
+        order._compute_blended_discount()
+        return {
+            "risk_score": float(getattr(order, "dealflow_risk_score", 0.0) or 0.0),
+            "health_status": getattr(order, "dealflow_health_status", "healthy"),
+            "dealflow_locked": bool(getattr(order, "dealflow_locked", False)),
+        }

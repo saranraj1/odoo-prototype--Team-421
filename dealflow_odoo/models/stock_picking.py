@@ -60,7 +60,7 @@ class StockPicking(models.Model):
         help="JSON-encoded split allocation breakdown for auditability and operational transparency.",
     )
 
-    def get_split_details_dict(self) -> Optional[Dict[str, Any]]:
+    def get_split_details_dict(self) -> Optional[Union[List[Dict[str, Any]], Dict[str, Any]]]:
         """Parses and returns the JSON split allocation details, or None if empty."""
         split_details_val = getattr(self, "dealflow_split_details", None)
         if not split_details_val:

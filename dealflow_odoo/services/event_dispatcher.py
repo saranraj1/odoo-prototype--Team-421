@@ -1,4 +1,4 @@
-﻿"""DealFlow360 Odoo Integration — Event Dispatcher & Webhook Service.
+"""DealFlow360 Odoo Integration — Event Dispatcher & Webhook Service.
 
 This module handles event emission, subscriber callbacks, in-memory event audit
 history, and HTTP webhook notifications to DealFlow backend and external consumers.
@@ -6,9 +6,11 @@ history, and HTTP webhook notifications to DealFlow backend and external consume
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
+import threading
 import urllib.error
 import urllib.request
 from collections import deque
@@ -47,6 +49,7 @@ class EventDispatcher:
             webhook_urls: Optional list of webhook endpoint URLs.
             max_history: Maximum number of recent events kept in memory.
         """
+        self._lock = threading.Lock()
         self._listeners: Dict[str, List[Callable[[EventPayloadDTO], Any]]] = {}
         self._webhook_urls: List[str] = list(webhook_urls or [])
         env_webhook = os.environ.get("DEALFLOW_WEBHOOK_URL")
@@ -67,15 +70,16 @@ class EventDispatcher:
             event_type: Event name or '*' for wildcard matching.
             callback: Callable receiving EventPayloadDTO.
         """
-        if event_type not in self._listeners:
-            self._listeners[event_type] = []
-        if callback not in self._listeners[event_type]:
-            self._listeners[event_type].append(callback)
-            logger.debug(
-                "Registered listener %s for event_type '%s'",
-                getattr(callback, "__name__", str(callback)),
-                event_type,
-            )
+        with self._lock:
+            if event_type not in self._listeners:
+                self._listeners[event_type] = []
+            if callback not in self._listeners[event_type]:
+                self._listeners[event_type].append(callback)
+                logger.debug(
+                    "Registered listener %s for event_type '%s'",
+                    getattr(callback, "__name__", str(callback)),
+                    event_type,
+                )
 
     def unregister_listener(
         self,
@@ -91,10 +95,11 @@ class EventDispatcher:
         Returns:
             True if removed, False if not found.
         """
-        if event_type in self._listeners and callback in self._listeners[event_type]:
-            self._listeners[event_type].remove(callback)
-            return True
-        return False
+        with self._lock:
+            if event_type in self._listeners and callback in self._listeners[event_type]:
+                self._listeners[event_type].remove(callback)
+                return True
+            return False
 
     def register_webhook(self, url: str) -> None:
         """Register a webhook endpoint URL.
@@ -102,9 +107,10 @@ class EventDispatcher:
         Args:
             url: Destination URL for event payloads (e.g. POST /internal/events/odoo).
         """
-        if url not in self._webhook_urls:
-            self._webhook_urls.append(url)
-            logger.info("Registered webhook endpoint: %s", url)
+        with self._lock:
+            if url not in self._webhook_urls:
+                self._webhook_urls.append(url)
+                logger.info("Registered webhook endpoint: %s", url)
 
     def unregister_webhook(self, url: str) -> bool:
         """Unregister a webhook endpoint URL.
@@ -115,11 +121,19 @@ class EventDispatcher:
         Returns:
             True if removed, False if not found.
         """
-        if url in self._webhook_urls:
-            self._webhook_urls.remove(url)
-            logger.info("Unregistered webhook endpoint: %s", url)
-            return True
-        return False
+        with self._lock:
+            if url in self._webhook_urls:
+                self._webhook_urls.remove(url)
+                logger.info("Unregistered webhook endpoint: %s", url)
+                return True
+            return False
+
+    def clear(self) -> None:
+        """Clear all registered listeners, webhook URLs, and recent events history."""
+        with self._lock:
+            self._listeners.clear()
+            self._webhook_urls.clear()
+            self._recent_events.clear()
 
     def dispatch(
         self,
@@ -155,7 +169,8 @@ class EventDispatcher:
         )
 
         event_dict = asdict(payload)
-        self._recent_events.append(event_dict)
+        with self._lock:
+            self._recent_events.append(event_dict)
 
         logger.info(
             "Event dispatched: event_type=%s, model=%s, record_id=%d, deal_id=%s, actor_id=%s",
@@ -191,14 +206,17 @@ class EventDispatcher:
             True if all active endpoints succeeded or if no webhooks configured;
             False if any delivery failed.
         """
-        if not self._webhook_urls:
+        with self._lock:
+            urls = list(self._webhook_urls)
+
+        if not urls:
             return True
 
         payload_dict = asdict(payload)
         raw_body = json.dumps(payload_dict, default=str).encode("utf-8")
         all_success = True
 
-        for url in self._webhook_urls:
+        for url in urls:
             req = urllib.request.Request(
                 url=url,
                 data=raw_body,
@@ -210,7 +228,7 @@ class EventDispatcher:
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=5.0) as resp:
+                with urllib.request.urlopen(req, timeout=1.0) as resp:
                     status_code = resp.getcode()
                     if 200 <= status_code < 300:
                         logger.debug(
@@ -259,25 +277,27 @@ class EventDispatcher:
         Returns:
             List of event dictionaries ordered from newest to oldest.
         """
-        events = list(self._recent_events)
-        events.reverse()
-        return events[:limit]
+        with self._lock:
+            events = [copy.deepcopy(e) for e in reversed(self._recent_events)]
+            return events[:limit]
 
     def clear(self) -> None:
         """Clear all registered listeners, webhooks, and event history."""
-        self._listeners.clear()
-        self._webhook_urls.clear()
-        self._recent_events.clear()
+        with self._lock:
+            self._listeners.clear()
+            self._webhook_urls.clear()
+            self._recent_events.clear()
 
     def _invoke_listeners(self, payload: EventPayloadDTO) -> None:
         """Invoke all matching callbacks for the given payload."""
         callbacks: List[Callable[[EventPayloadDTO], Any]] = []
 
-        if payload.event_type in self._listeners:
-            callbacks.extend(self._listeners[payload.event_type])
+        with self._lock:
+            if payload.event_type in self._listeners:
+                callbacks.extend(self._listeners[payload.event_type])
 
-        if "*" in self._listeners:
-            callbacks.extend(self._listeners["*"])
+            if "*" in self._listeners:
+                callbacks.extend(self._listeners["*"])
 
         for callback in callbacks:
             try:

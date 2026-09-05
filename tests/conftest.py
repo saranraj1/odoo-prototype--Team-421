@@ -8,6 +8,7 @@ that mirrors Odoo models, relations, environment, security, and transactions.
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Union
@@ -21,7 +22,11 @@ from dealflow_odoo.constants import (
     APPROVAL_STATE_PENDING,
     APPROVAL_STATE_REAPPROVAL_REQUIRED,
     APPROVAL_STATE_REJECTED,
+    CATEGORY_DISCOUNT_CEILINGS,
+    DEFAULT_FINANCE_DISCOUNT_THRESHOLD,
     DEFAULT_MAX_REP_DISCOUNT,
+    HEALTH_STATUS_AT_RISK,
+    HEALTH_STATUS_CRITICAL,
     HEALTH_STATUS_HEALTHY,
     RISK_LEVEL_LOW,
     RISK_LEVEL_HIGH,
@@ -197,11 +202,35 @@ class MockDealflowNegotiation(MockBaseRecord):
                 })
                 order.message_post(f"Customer negotiation submitted: {self.name}")
 
+    @property
+    def partner_id(self):
+        order_id = getattr(self, "sale_order_id", None)
+        if order_id and self._env:
+            order = self._env["sale.order"].browse(order_id)
+            if order.exists():
+                return order.partner_id
+        return None
+
     def action_under_review(self) -> bool:
         self.status = "under_review"
         return True
 
     def action_approve(self, review_note: Optional[str] = None) -> bool:
+        user = getattr(self._env, "user", None)
+        if user:
+            if (
+                user.has_group("base.group_portal")
+                or user.has_group("dealflow_odoo.group_dealflow_portal")
+                or not user.has_group("base.group_user")
+            ):
+                raise AuthorizationError("Privilege Escalation Blocked: Portal users cannot approve negotiations.")
+            if user.has_group("dealflow_odoo.group_dealflow_sales_rep"):
+                is_finance = user.has_group("dealflow_odoo.group_dealflow_finance") or user.has_group("dealflow_odoo.group_dealflow_admin")
+                if not is_finance and self.requested_discount > DEFAULT_FINANCE_DISCOUNT_THRESHOLD:
+                    raise AuthorizationError(
+                        f"Approval denied: Discounts exceeding {DEFAULT_FINANCE_DISCOUNT_THRESHOLD}% require DealFlow Finance approval."
+                    )
+
         self.status = "approved"
         if review_note:
             self.review_note = review_note
@@ -272,6 +301,22 @@ class MockSaleOrder(MockBaseRecord):
         self.chatter_messages.append(body)
 
     def write(self, vals: Dict[str, Any]) -> bool:
+        user = getattr(self._env, "user", None)
+        if user and vals.get("dealflow_approval_state") == APPROVAL_STATE_APPROVED:
+            is_portal = (
+                user.has_group("base.group_portal")
+                or user.has_group("dealflow_odoo.group_dealflow_portal")
+                or not user.has_group("base.group_user")
+            )
+            if is_portal:
+                raise AuthorizationError("Privilege Escalation Blocked: Portal users cannot update order approval state.")
+            if user.has_group("dealflow_odoo.group_dealflow_sales_rep"):
+                is_finance = user.has_group("dealflow_odoo.group_dealflow_finance") or user.has_group("dealflow_odoo.group_dealflow_admin")
+                if not is_finance and self.dealflow_blended_discount > DEFAULT_FINANCE_DISCOUNT_THRESHOLD:
+                    raise AuthorizationError(
+                        f"Privilege Escalation Blocked: Sales Rep cannot approve order exceeding {DEFAULT_FINANCE_DISCOUNT_THRESHOLD}% discount."
+                    )
+
         ctx = getattr(self._env, "context", {}) or {}
         skip_reapproval = ctx.get("dealflow_skip_reapproval", False)
 
@@ -398,12 +443,130 @@ class MockSaleOrder(MockBaseRecord):
         self.message_post("Order locked pending DealFlow approval.")
         return True
 
-    def action_dealflow_unlock(self) -> bool:
+    def action_dealflow_unlock(self, actor: Optional[Any] = None) -> bool:
+        user = getattr(self._env, "user", None)
+        target = actor if actor is not None else user
+        if target:
+            is_authorized = False
+            if hasattr(target, "has_group"):
+                is_authorized = (
+                    target.has_group("dealflow_odoo.group_dealflow_sales_manager")
+                    or target.has_group("dealflow_odoo.group_dealflow_finance")
+                    or target.has_group("dealflow_odoo.group_dealflow_admin")
+                    or getattr(target, "is_superuser", False)
+                )
+            elif isinstance(target, dict):
+                role = target.get("role", "")
+                is_authorized = role in ("manager", "sales_manager", "finance", "admin")
+            elif isinstance(target, str):
+                is_authorized = target.lower() in ("manager", "sales_manager", "finance", "admin")
+
+            if not is_authorized:
+                raise AuthorizationError(
+                    "Permission denied: Actor is not authorized to unlock DealFlow orders. Manager or Finance role required."
+                )
+
         self.dealflow_locked = False
         self.message_post("Order unlocked.")
         return True
 
+    def action_dealflow_evaluate_governance(self) -> Dict[str, Any]:
+        self._compute_blended_discount()
+        category_breaches = []
+        has_negative_margin = False
+        total_list = 0.0
+        total_cost = 0.0
+
+        for line in getattr(self, "order_line", []):
+            if getattr(line, "display_type", False):
+                continue
+            prod = line.product_id
+            cat_name = prod.categ_id.name if getattr(prod, "categ_id", None) else "All"
+            ceiling = CATEGORY_DISCOUNT_CEILINGS.get(cat_name, DEFAULT_MAX_REP_DISCOUNT)
+            disc = float(getattr(line, "discount", 0.0))
+            if disc > ceiling:
+                category_breaches.append({
+                    "line_id": line.id,
+                    "product": getattr(line, "name", ""),
+                    "category": cat_name,
+                    "discount": disc,
+                    "ceiling": ceiling,
+                    "excess": disc - ceiling,
+                })
+
+            qty = float(getattr(line, "product_uom_qty", 0.0))
+            price = float(getattr(line, "price_unit", 0.0))
+            cost = float(getattr(line, "dealflow_cost_price", getattr(prod, "standard_price", 0.0)))
+            subtotal = (qty * price) * (1.0 - (disc / 100.0))
+            line_cost = cost * qty
+            total_list += qty * price
+            total_cost += line_cost
+            if subtotal < line_cost:
+                has_negative_margin = True
+
+        total_margin = float(getattr(self, "amount_untaxed", 0.0)) - total_cost
+
+        # Calculate explainable risk score
+        risk = 0.0
+        if self.dealflow_blended_discount > DEFAULT_MAX_REP_DISCOUNT:
+            risk += (self.dealflow_blended_discount - DEFAULT_MAX_REP_DISCOUNT) * 1.5
+
+        for b in category_breaches:
+            risk += b["excess"] * 2.0 + 15.0
+
+        if total_margin < 0.0 or has_negative_margin:
+            risk += 35.0
+
+        is_free_deal = any(float(getattr(l, "discount", 0.0)) >= 100.0 for l in getattr(self, "order_line", []) if not getattr(l, "display_type", False)) or (total_list > 0 and self.dealflow_blended_discount >= 100.0)
+        if is_free_deal:
+            risk = 100.0
+
+        self.dealflow_risk_score = round(min(100.0, max(0.0, risk)), 2)
+
+        if is_free_deal or self.dealflow_blended_discount >= DEFAULT_FINANCE_DISCOUNT_THRESHOLD or total_margin < 0.0:
+            self.dealflow_health_status = HEALTH_STATUS_CRITICAL
+            if self.dealflow_approval_state != APPROVAL_STATE_APPROVED:
+                self.dealflow_locked = True
+        elif category_breaches or self.dealflow_blended_discount > DEFAULT_MAX_REP_DISCOUNT:
+            self.dealflow_health_status = HEALTH_STATUS_AT_RISK
+            if self.dealflow_approval_state != APPROVAL_STATE_APPROVED:
+                self.dealflow_locked = True
+        else:
+            self.dealflow_health_status = HEALTH_STATUS_HEALTHY
+
+        self.dealflow_last_evaluated_at = datetime.now().isoformat()
+        return {
+            "risk_score": self.dealflow_risk_score,
+            "health_status": self.dealflow_health_status,
+            "dealflow_locked": self.dealflow_locked,
+            "category_breaches": category_breaches,
+            "is_free_deal": is_free_deal,
+            "has_negative_margin": has_negative_margin,
+        }
+
     def action_dealflow_apply_approved_change(self, changes: Dict[str, Any]) -> bool:
+        user = getattr(self._env, "user", None)
+        if user:
+            is_portal = (
+                user.has_group("base.group_portal")
+                or user.has_group("dealflow_odoo.group_dealflow_portal")
+                or not user.has_group("base.group_user")
+            )
+            if is_portal:
+                raise AuthorizationError("Privilege Escalation Blocked: Portal users cannot apply approved changes.")
+            if user.has_group("dealflow_odoo.group_dealflow_sales_rep"):
+                is_finance = user.has_group("dealflow_odoo.group_dealflow_finance") or user.has_group("dealflow_odoo.group_dealflow_admin")
+                if not is_finance:
+                    discounts = []
+                    if "discount" in changes:
+                        discounts.append(float(changes["discount"]))
+                    if "target_line_discounts" in changes and isinstance(changes["target_line_discounts"], dict):
+                        discounts.extend(float(d) for d in changes["target_line_discounts"].values())
+                    if "line_discounts" in changes and isinstance(changes["line_discounts"], dict):
+                        discounts.extend(float(d) for d in changes["line_discounts"].values())
+                    if any(d > DEFAULT_FINANCE_DISCOUNT_THRESHOLD for d in discounts):
+                        raise AuthorizationError(f"Privilege Escalation Blocked: Sales Rep cannot approve discounts exceeding {DEFAULT_FINANCE_DISCOUNT_THRESHOLD}%.")
+
         line_discounts = changes.get("target_line_discounts") or changes.get("line_discounts") or {}
         if isinstance(line_discounts, dict):
             for line_id_key, disc in line_discounts.items():
@@ -440,11 +603,26 @@ class MockSaleOrder(MockBaseRecord):
         return True
 
     def action_dealflow_confirm(self) -> bool:
+        user = getattr(self._env, "user", None)
+        if user and (
+            user.has_group("base.group_portal")
+            or user.has_group("dealflow_odoo.group_dealflow_portal")
+            or not user.has_group("base.group_user")
+        ):
+            raise AuthorizationError("Privilege Escalation Blocked: Portal users cannot confirm sales orders directly.")
+
         self._compute_blended_discount()
         exceeds_threshold = self.dealflow_blended_discount > DEFAULT_MAX_REP_DISCOUNT or any(
             l.discount > DEFAULT_MAX_REP_DISCOUNT for l in self.order_line if not getattr(l, "display_type", False)
         )
-        if (self.dealflow_locked or exceeds_threshold) and self.dealflow_approval_state != APPROVAL_STATE_APPROVED:
+        has_category_breach = any(
+            float(getattr(l, "discount", 0.0)) > CATEGORY_DISCOUNT_CEILINGS.get(
+                l.product_id.categ_id.name if getattr(l, "product_id", None) and getattr(l.product_id, "categ_id", None) else "All",
+                DEFAULT_MAX_REP_DISCOUNT
+            )
+            for l in self.order_line if not getattr(l, "display_type", False)
+        )
+        if (self.dealflow_locked or exceeds_threshold or has_category_breach) and self.dealflow_approval_state != APPROVAL_STATE_APPROVED:
             raise AuthorizationError("Order locked pending DealFlow approval")
 
         self.state = "sale"
@@ -456,6 +634,14 @@ class MockSaleOrder(MockBaseRecord):
     def _create_invoices(self, final: bool = True) -> MockRecordSet:
         if self.state not in ("sale", "done"):
             raise InvalidStateError(f"Cannot invoice order in state '{self.state}'. Order must be confirmed.")
+
+        active_invoices = [inv for inv in self.invoice_ids if getattr(inv, "state", "") != "cancel" and getattr(inv, "move_type", "") != "out_refund"]
+        if active_invoices:
+            already_invoiced = sum(float(getattr(inv, "amount_total", 0.0)) for inv in active_invoices)
+            if self.amount_total > 0 and already_invoiced >= self.amount_total:
+                raise InvalidStateError(f"Order {self.id} is already fully invoiced.")
+            elif self.amount_total == 0.0 and len(active_invoices) > 0:
+                raise InvalidStateError(f"Order {self.id} is already invoiced.")
 
         inv_model = self._env["account.move"]
         inv_id = len(inv_model._store) + 1
@@ -499,6 +685,15 @@ class MockSaleOrderLine(MockBaseRecord):
     """Mock for sale.order.line."""
 
     def __init__(self, values: Dict[str, Any], env: Any):
+        if "discount" in values:
+            d = float(values["discount"])
+            if d < 0.0 or d > 100.0:
+                raise ValidationError(f"Discount must be between 0.0% and 100.0%. Got {d}%.")
+        if not values.get("display_type", False) and "product_uom_qty" in values:
+            q = float(values["product_uom_qty"])
+            if q <= 0.0:
+                raise ValidationError(f"Quantity must be strictly positive. Got {q}.")
+
         super().__init__(values, env, "sale.order.line")
         self.display_type = values.get("display_type", False)
         self.dealflow_approved_discount = float(values.get("dealflow_approved_discount", 0.0))
@@ -509,12 +704,24 @@ class MockSaleOrderLine(MockBaseRecord):
         self.order_id = values.get("order_id")
 
     def write(self, vals: Dict[str, Any]) -> bool:
+        if "discount" in vals:
+            d = float(vals["discount"])
+            if d < 0.0 or d > 100.0:
+                raise ValidationError(f"Discount must be between 0.0% and 100.0%. Got {d}%.")
+        if "product_uom_qty" in vals:
+            q = float(vals["product_uom_qty"])
+            if not getattr(self, "display_type", False) and q <= 0.0:
+                raise ValidationError(f"Quantity must be strictly positive. Got {q}.")
+
         res = super().write(vals)
         if "discount" in vals or "price_unit" in vals or "product_uom_qty" in vals:
             qty = float(getattr(self, "product_uom_qty", 0.0))
             price = float(getattr(self, "price_unit", 0.0))
             disc = float(getattr(self, "discount", 0.0))
             self.price_subtotal = round((qty * price) * (1.0 - (disc / 100.0)), 2)
+            if self.order_id and getattr(self.order_id, "dealflow_approval_state", "") == APPROVAL_STATE_APPROVED:
+                self.order_id.dealflow_approval_state = APPROVAL_STATE_REAPPROVAL_REQUIRED
+                self.order_id.dealflow_locked = True
         if self.order_id and hasattr(self.order_id, "_compute_blended_discount"):
             self.order_id._compute_blended_discount()
         return res
@@ -570,9 +777,36 @@ class MockStockPicking(MockBaseRecord):
 
         pt_id = values.get("picking_type_id")
         wh_id = pt_id or 1
-        wh_name = "WH1 Main" if wh_id == 1 else "WH2 East"
+        wh_rec = env["stock.warehouse"].browse(wh_id) if env and hasattr(env, "_models") and "stock.warehouse" in env._models else None
+        wh_name = getattr(wh_rec, "name", None) or ("WH1 Main" if wh_id == 1 else "WH2 East")
         wh_obj = type("WH", (), {"id": wh_id, "name": wh_name})()
         self.picking_type_id = type("PickingType", (), {"id": wh_id, "warehouse_id": wh_obj})()
+
+    def get_split_details_dict(self) -> Optional[Union[List[Dict[str, Any]], Dict[str, Any]]]:
+        """Parses and returns the JSON split allocation details, or None if empty."""
+        split_details_val = getattr(self, "dealflow_split_details", None)
+        if not split_details_val:
+            return None
+        try:
+            return json.loads(split_details_val)
+        except (ValueError, TypeError):
+            return None
+
+    def action_view_batch_pickings(self) -> Any:
+        """Returns an Odoo window action to view all pickings in this fulfillment batch."""
+        if hasattr(self, "ensure_one"):
+            self.ensure_one()
+        batch_id = getattr(self, "dealflow_fulfillment_batch_id", None)
+        if not batch_id:
+            return False
+        return {
+            "name": f"Batch Pickings ({batch_id})",
+            "type": "ir.actions.act_window",
+            "res_model": "stock.picking",
+            "view_mode": "tree,form",
+            "domain": [("dealflow_fulfillment_batch_id", "=", batch_id)],
+            "context": dict(self._env.context if hasattr(self, "_env") and self._env else {}),
+        }
 
     def action_cancel(self) -> bool:
         self.state = "cancel"
@@ -641,6 +875,14 @@ class MockModel:
                         break
             if match:
                 matched.append(rec)
+
+        if order:
+            parts = [p.strip() for p in order.split(",")]
+            for part in reversed(parts):
+                field_dir = part.split()
+                fname = field_dir[0]
+                desc = len(field_dir) > 1 and field_dir[1].lower() == "desc"
+                matched.sort(key=lambda r: getattr(r, fname, 0) or 0, reverse=desc)
 
         if limit:
             matched = matched[:limit]

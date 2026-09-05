@@ -165,6 +165,19 @@ class SaleOrderLine(models.Model):
             if not self.dealflow_recurring_interval:
                 self.dealflow_recurring_interval = "year" if "annual" in combined_desc or "year" in combined_desc else "month"
 
+    @api.constrains("discount", "product_uom_qty")
+    def _check_dealflow_line_constraints(self) -> None:
+        """Enforce strict business rules on discount boundaries and quantities."""
+        for line in self:
+            if line.discount < 0.0 or line.discount > 100.0:
+                raise OdooValidationError(
+                    _(f"Discount must be between 0.0% and 100.0%. Received: {line.discount}%.")
+                )
+            if not getattr(line, "display_type", False) and (line.product_uom_qty or 0.0) <= 0.0:
+                raise OdooValidationError(
+                    _(f"Order line quantity must be strictly positive. Received: {line.product_uom_qty}.")
+                )
+
     def write(self, vals: Dict[str, Any]) -> bool:
         """Governance guard on order line modification.
 
@@ -172,6 +185,24 @@ class SaleOrderLine(models.Model):
         the parent order was approved, auto-transition the order to
         'reapproval_required' and engage the dealflow lock.
         """
+        # Validate discount boundary
+        if "discount" in vals:
+            disc_val = float(vals["discount"])
+            if disc_val < 0.0 or disc_val > 100.0:
+                raise OdooValidationError(
+                    _(f"Discount must be between 0.0% and 100.0%. Received: {disc_val}%.")
+                )
+
+        # Validate strictly positive quantity
+        if "product_uom_qty" in vals:
+            qty_val = float(vals["product_uom_qty"])
+            if qty_val <= 0.0:
+                for line in self:
+                    if not getattr(line, "display_type", False):
+                        raise OdooValidationError(
+                            _(f"Order line quantity must be strictly positive. Received: {qty_val}.")
+                        )
+
         # Skip if explicitly bypassed in context
         ctx = getattr(self.env, "context", {}) or getattr(self, "_context", {}) or {}
         if ctx.get("dealflow_skip_reapproval"):

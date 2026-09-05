@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
 # Testing and coverage caches
 .pytest_cache/
@@ -9,14 +10,32 @@ __pycache__/
 .coverage.*
 htmlcov/
 
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+
 # Hackathon / environment artifacts
 .reentry/
 
-# Virtual environments
-.venv/
-venv/
-env/
+# Odoo specifics
+*.log
+odoo.log
+odoo.conf
+filestore/
+sessions/
 
 # IDE / Editor files
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# Local PostgreSQL & Downloads
+pgsql/
+pg_data/
+*.zip
+*.bin
+

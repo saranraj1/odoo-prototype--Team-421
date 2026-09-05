@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Union
 
 try:
     from odoo import _, api, fields, models
-    from odoo.exceptions import UserError, ValidationError as OdooValidationError
+    from odoo.exceptions import AccessError, UserError, ValidationError as OdooValidationError
 except ImportError:
     from datetime import datetime as _dt
 
@@ -65,6 +65,7 @@ except ImportError:
             def action_confirm(self):
                 return True
 
+    class AccessError(Exception): pass
     class UserError(Exception): pass
     class OdooValidationError(Exception): pass
     def _(text): return text
@@ -81,11 +82,16 @@ try:
         APPROVAL_STATE_PENDING,
         APPROVAL_STATE_REAPPROVAL_REQUIRED,
         APPROVAL_STATE_REJECTED,
+        CATEGORY_DISCOUNT_CEILINGS,
+        DEFAULT_FINANCE_DISCOUNT_THRESHOLD,
+        DEFAULT_MAX_MGR_DISCOUNT,
         DEFAULT_MAX_REP_DISCOUNT,
+        HEALTH_STATUS_AT_RISK,
+        HEALTH_STATUS_CRITICAL,
         HEALTH_STATUS_HEALTHY,
         HEALTH_STATUSES,
     )
-    from ..schemas import CustomerDTO, DealContextDTO, OrderLineDTO
+    from ..schemas import AuthorizationError, CustomerDTO, DealContextDTO, OrderLineDTO, ValidationError
 except (ImportError, ValueError):
     from dealflow_odoo.constants import (
         APPROVAL_STATES,
@@ -94,11 +100,16 @@ except (ImportError, ValueError):
         APPROVAL_STATE_PENDING,
         APPROVAL_STATE_REAPPROVAL_REQUIRED,
         APPROVAL_STATE_REJECTED,
+        CATEGORY_DISCOUNT_CEILINGS,
+        DEFAULT_FINANCE_DISCOUNT_THRESHOLD,
+        DEFAULT_MAX_MGR_DISCOUNT,
         DEFAULT_MAX_REP_DISCOUNT,
+        HEALTH_STATUS_AT_RISK,
+        HEALTH_STATUS_CRITICAL,
         HEALTH_STATUS_HEALTHY,
         HEALTH_STATUSES,
     )
-    from dealflow_odoo.schemas import CustomerDTO, DealContextDTO, OrderLineDTO
+    from dealflow_odoo.schemas import AuthorizationError, CustomerDTO, DealContextDTO, OrderLineDTO, ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -297,8 +308,30 @@ class SaleOrder(models.Model):
                 )
         return True
 
-    def action_dealflow_unlock(self) -> bool:
-        """Unlocks the order after approved."""
+    def action_dealflow_unlock(self, actor: Optional[Any] = None) -> bool:
+        """Unlocks the order after approved, enforcing security role checks."""
+        user = getattr(self.env, "user", None)
+        target = actor if actor is not None else user
+        if target:
+            is_authorized = False
+            if hasattr(target, "has_group"):
+                is_authorized = (
+                    target.has_group("dealflow_odoo.group_dealflow_sales_manager")
+                    or target.has_group("dealflow_odoo.group_dealflow_finance")
+                    or target.has_group("dealflow_odoo.group_dealflow_admin")
+                    or getattr(target, "is_superuser", False)
+                )
+            elif isinstance(target, dict):
+                role = target.get("role", "")
+                is_authorized = role in ("manager", "sales_manager", "finance", "admin")
+            elif isinstance(target, str):
+                is_authorized = target.lower() in ("manager", "sales_manager", "finance", "admin")
+
+            if not is_authorized:
+                raise AuthorizationError(
+                    _("Permission denied: Actor is not authorized to unlock DealFlow orders. Manager or Finance role required.")
+                )
+
         for order in self:
             order.write({"dealflow_locked": False})
             if hasattr(order, "message_post"):
@@ -308,6 +341,88 @@ class SaleOrder(models.Model):
                     subtype_xmlid="mail.mt_note",
                 )
         return True
+
+    def action_dealflow_evaluate_governance(self) -> Dict[str, Any]:
+        """Audits deal pricing, category ceilings, risk score, and health status."""
+        self.ensure_one()
+        self._compute_blended_discount()
+
+        category_breaches = []
+        has_negative_margin = False
+        total_list = 0.0
+        total_cost = 0.0
+
+        for line in self.order_line:
+            if line.display_type:
+                continue
+            cat_name = line.product_id.categ_id.name if line.product_id and line.product_id.categ_id else "All"
+            ceiling = CATEGORY_DISCOUNT_CEILINGS.get(cat_name, DEFAULT_MAX_REP_DISCOUNT)
+            disc = float(line.discount or 0.0)
+            if disc > ceiling:
+                category_breaches.append({
+                    "line_id": line.id,
+                    "product": line.name,
+                    "category": cat_name,
+                    "discount": disc,
+                    "ceiling": ceiling,
+                    "excess": disc - ceiling,
+                })
+
+            qty = float(line.product_uom_qty or 0.0)
+            price_unit = float(line.price_unit or 0.0)
+            cost = float(getattr(line, "dealflow_cost_price", 0.0) or (line.product_id.standard_price if line.product_id else 0.0))
+            subtotal = (price_unit * qty) * (1.0 - disc / 100.0)
+            line_cost = cost * qty
+            total_list += price_unit * qty
+            total_cost += line_cost
+            if subtotal < line_cost:
+                has_negative_margin = True
+
+        total_margin = float(self.amount_untaxed or 0.0) - total_cost
+
+        # Calculate explainable risk score
+        risk = 0.0
+        # Blended discount excess over rep threshold
+        if self.dealflow_blended_discount > DEFAULT_MAX_REP_DISCOUNT:
+            risk += (self.dealflow_blended_discount - DEFAULT_MAX_REP_DISCOUNT) * 1.5
+
+        # Category breach penalty
+        for b in category_breaches:
+            risk += b["excess"] * 2.0 + 15.0
+
+        # Negative margin penalty
+        if total_margin < 0.0 or has_negative_margin:
+            risk += 35.0
+
+        # Free deal penalty (100% discount)
+        is_free_deal = any(float(line.discount or 0.0) >= 100.0 for line in self.order_line if not line.display_type) or (total_list > 0 and self.dealflow_blended_discount >= 100.0)
+        if is_free_deal:
+            risk = 100.0
+
+        risk_score = round(min(100.0, max(0.0, risk)), 2)
+        self.dealflow_risk_score = risk_score
+
+        # Determine health status and finance lock
+        if is_free_deal or self.dealflow_blended_discount >= DEFAULT_FINANCE_DISCOUNT_THRESHOLD or total_margin < 0.0:
+            self.dealflow_health_status = HEALTH_STATUS_CRITICAL
+            if self.dealflow_approval_state != APPROVAL_STATE_APPROVED:
+                self.dealflow_locked = True
+        elif category_breaches or self.dealflow_blended_discount > DEFAULT_MAX_REP_DISCOUNT:
+            self.dealflow_health_status = HEALTH_STATUS_AT_RISK
+            if self.dealflow_approval_state != APPROVAL_STATE_APPROVED:
+                self.dealflow_locked = True
+        else:
+            self.dealflow_health_status = HEALTH_STATUS_HEALTHY
+
+        self.dealflow_last_evaluated_at = fields.Datetime.now()
+        return {
+            "risk_score": self.dealflow_risk_score,
+            "health_status": self.dealflow_health_status,
+            "dealflow_locked": self.dealflow_locked,
+            "category_breaches": category_breaches,
+            "is_free_deal": is_free_deal,
+            "has_negative_margin": has_negative_margin,
+        }
 
     def action_dealflow_apply_approved_change(self, approved_changes: Dict[str, Any]) -> bool:
         """Atomically applies updated discounts and terms, sets approval state to 'approved', and unlocks order.
@@ -325,6 +440,38 @@ class SaleOrder(models.Model):
                 - dealflow_health_status: str
         """
         self.ensure_one()
+        user = getattr(self.env, "user", None)
+        if user:
+            is_portal = (
+                user.has_group('base.group_portal')
+                or user.has_group('dealflow_odoo.group_dealflow_portal')
+                or not user.has_group('base.group_user')
+            )
+            if is_portal:
+                raise AccessError(_("Privilege Escalation Blocked: Portal users cannot apply approved changes."))
+
+            if user.has_group('dealflow_odoo.group_dealflow_sales_rep'):
+                is_finance_or_admin = (
+                    user.has_group('dealflow_odoo.group_dealflow_finance')
+                    or user.has_group('dealflow_odoo.group_dealflow_admin')
+                )
+                if not is_finance_or_admin:
+                    discounts = []
+                    if "discount" in approved_changes:
+                        discounts.append(float(approved_changes["discount"]))
+                    if "target_line_discounts" in approved_changes and isinstance(approved_changes["target_line_discounts"], dict):
+                        discounts.extend(float(d) for d in approved_changes["target_line_discounts"].values())
+                    if "line_discounts" in approved_changes and isinstance(approved_changes["line_discounts"], dict):
+                        discounts.extend(float(d) for d in approved_changes["line_discounts"].values())
+                    if "lines" in approved_changes and isinstance(approved_changes["lines"], list):
+                        discounts.extend(float(item.get("discount", 0.0)) for item in approved_changes["lines"] if isinstance(item, dict))
+
+                    if any(d > DEFAULT_FINANCE_DISCOUNT_THRESHOLD for d in discounts):
+                        raise AccessError(
+                            _("Privilege Escalation Blocked: Sales Rep cannot approve discounts exceeding %s%% (Finance approval required).")
+                            % DEFAULT_FINANCE_DISCOUNT_THRESHOLD
+                        )
+
         order = self.with_context(dealflow_skip_reapproval=True)
 
         # 1. Update line discounts
@@ -414,9 +561,18 @@ class SaleOrder(models.Model):
         """Validates DealFlow governance rules before order confirmation.
 
         Raises:
+            AccessError: If order confirmation is attempted by a portal customer.
             UserError: If discount exceeds threshold or dealflow_locked is True
                        and dealflow_approval_state != 'approved'.
         """
+        user = getattr(self.env, "user", None)
+        if user and (
+            user.has_group('base.group_portal')
+            or user.has_group('dealflow_odoo.group_dealflow_portal')
+            or not user.has_group('base.group_user')
+        ):
+            raise AccessError(_("Privilege Escalation Blocked: Portal users cannot confirm sales orders directly."))
+
         ctx = getattr(self.env, "context", {}) or getattr(self, "_context", {}) or {}
         bypass = ctx.get("dealflow_bypass_check", False)
         if not bypass:
@@ -429,7 +585,15 @@ class SaleOrder(models.Model):
                         if not line.display_type
                     )
                 )
-                if (order.dealflow_locked or exceeds_threshold) and order.dealflow_approval_state != APPROVAL_STATE_APPROVED:
+                has_category_breach = any(
+                    line.discount > CATEGORY_DISCOUNT_CEILINGS.get(
+                        line.product_id.categ_id.name if line.product_id and line.product_id.categ_id else "All",
+                        DEFAULT_MAX_REP_DISCOUNT
+                    )
+                    for line in order.order_line
+                    if not line.display_type
+                )
+                if (order.dealflow_locked or exceeds_threshold or has_category_breach) and order.dealflow_approval_state != APPROVAL_STATE_APPROVED:
                     raise UserError(_("Order locked pending DealFlow approval"))
 
         if hasattr(super(), "action_confirm"):
@@ -447,6 +611,42 @@ class SaleOrder(models.Model):
         auto-transitions dealflow_approval_state to 'reapproval_required'
         and dealflow_locked=True.
         """
+        # Validate discount boundary in order_line commands
+        if "order_line" in vals and isinstance(vals["order_line"], list):
+            for cmd in vals["order_line"]:
+                if isinstance(cmd, (list, tuple)) and len(cmd) >= 3 and isinstance(cmd[2], dict):
+                    line_data = cmd[2]
+                    if "discount" in line_data:
+                        d = float(line_data["discount"])
+                        if d < 0.0 or d > 100.0:
+                            raise OdooValidationError(_(f"Discount must be between 0.0% and 100.0%. Received: {d}%."))
+                    if "product_uom_qty" in line_data:
+                        q = float(line_data["product_uom_qty"])
+                        if q <= 0.0:
+                            raise OdooValidationError(_(f"Quantity must be strictly positive. Received: {q}."))
+        user = getattr(self.env, "user", None)
+        if user and vals.get("dealflow_approval_state") == APPROVAL_STATE_APPROVED:
+            is_portal = (
+                user.has_group('base.group_portal')
+                or user.has_group('dealflow_odoo.group_dealflow_portal')
+                or not user.has_group('base.group_user')
+            )
+            if is_portal:
+                raise AccessError(_("Privilege Escalation Blocked: Portal users cannot update order approval state."))
+
+            if user.has_group('dealflow_odoo.group_dealflow_sales_rep'):
+                is_finance_or_admin = (
+                    user.has_group('dealflow_odoo.group_dealflow_finance')
+                    or user.has_group('dealflow_odoo.group_dealflow_admin')
+                )
+                if not is_finance_or_admin:
+                    for order in self:
+                        if order.dealflow_blended_discount > DEFAULT_FINANCE_DISCOUNT_THRESHOLD:
+                            raise AccessError(
+                                _("Privilege Escalation Blocked: Sales Rep cannot approve order exceeding %s%% discount (Finance approval required).")
+                                % DEFAULT_FINANCE_DISCOUNT_THRESHOLD
+                            )
+
         ctx = getattr(self.env, "context", {}) or getattr(self, "_context", {}) or {}
         if ctx.get("dealflow_skip_reapproval"):
             return super().write(vals)

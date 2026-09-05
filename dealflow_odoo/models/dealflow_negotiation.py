@@ -71,6 +71,8 @@ except ImportError:
 try:
     from ..constants import (
         APPROVAL_STATE_PENDING,
+        DEFAULT_FINANCE_DISCOUNT_THRESHOLD,
+        DEFAULT_MAX_REP_DISCOUNT,
         NEGOTIATION_STATUSES,
         NEGOTIATION_STATUS_SUBMITTED,
         NEGOTIATION_STATUS_UNDER_REVIEW,
@@ -81,6 +83,8 @@ try:
 except (ImportError, ValueError):
     from dealflow_odoo.constants import (
         APPROVAL_STATE_PENDING,
+        DEFAULT_FINANCE_DISCOUNT_THRESHOLD,
+        DEFAULT_MAX_REP_DISCOUNT,
         NEGOTIATION_STATUSES,
         NEGOTIATION_STATUS_SUBMITTED,
         NEGOTIATION_STATUS_UNDER_REVIEW,
@@ -280,6 +284,10 @@ class DealFlowNegotiation(models.Model):
 
             # Post notification to order chatter
             try:
+                import html
+                clean_name = html.escape(str(record.name or ''))
+                clean_terms = html.escape(str(record.requested_terms or _("N/A")))
+                clean_note = html.escape(str(record.customer_note or _("N/A")))
                 order.sudo().message_post(
                     body=_(
                         "<b>DealFlow: Customer Negotiation Submitted</b><br/>"
@@ -290,11 +298,11 @@ class DealFlowNegotiation(models.Model):
                         "<b>Customer Justification:</b> %s<br/>"
                         "<i>Quotation has been locked pending internal review.</i>"
                     ) % (
-                        record.name,
+                        clean_name,
                         record.requested_discount,
                         record.proposed_amount,
-                        record.requested_terms or _("N/A"),
-                        record.customer_note or _("N/A"),
+                        clean_terms,
+                        clean_note,
                     ),
                     subtype_xmlid='mail.mt_note',
                 )
@@ -318,7 +326,28 @@ class DealFlowNegotiation(models.Model):
 
     def action_approve(self, review_note: Optional[str] = None):
         """Approve the negotiation request and unlock the quote."""
+        user = self.env.user
+        if user:
+            is_portal = (
+                user.has_group('base.group_portal')
+                or user.has_group('dealflow_odoo.group_dealflow_portal')
+                or not user.has_group('base.group_user')
+            )
+            if is_portal:
+                raise AccessError(_("Privilege Escalation Blocked: Portal users cannot approve negotiations."))
+
+            is_finance_or_admin = (
+                user.has_group('dealflow_odoo.group_dealflow_finance')
+                or user.has_group('dealflow_odoo.group_dealflow_admin')
+            )
+
         for record in self:
+            if user and record.requested_discount > DEFAULT_FINANCE_DISCOUNT_THRESHOLD and not is_finance_or_admin:
+                raise AccessError(
+                    _("Privilege Escalation Blocked: Approval for discount exceeding %s%% requires DealFlow Finance approval.")
+                    % DEFAULT_FINANCE_DISCOUNT_THRESHOLD
+                )
+
             vals: Dict[str, Any] = {
                 'status': NEGOTIATION_STATUS_APPROVED,
                 'reviewed_by': self.env.user.id,

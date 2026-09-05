@@ -110,10 +110,16 @@ class PortalController(http.Controller):
         """Safely parse request payload whether passed as JSON body or form parameters."""
         try:
             if request.httprequest.data:
-                return json.loads(request.httprequest.data.decode('utf-8'))
+                parsed = json.loads(request.httprequest.data.decode('utf-8'))
+                if isinstance(parsed, dict):
+                    return parsed
+                return {}
         except Exception:
             pass
-        return request.params or {}
+        params = request.params
+        if isinstance(params, dict):
+            return params
+        return {}
 
     def _get_authenticated_user(self):
         """Retrieve authenticated user or None if public/unauthenticated."""
@@ -237,6 +243,22 @@ class PortalController(http.Controller):
                 status=401
             )
 
+        try:
+            order_id = int(order_id)
+        except (ValueError, TypeError):
+            return self._json_error(
+                ERR_VALIDATION,
+                "Parameter order_id must be a valid integer.",
+                status=400
+            )
+
+        if order_id <= 0:
+            return self._json_error(
+                ERR_NOT_FOUND,
+                f"Quotation with ID {order_id} not found.",
+                status=404
+            )
+
         order = request.env['sale.order'].sudo().browse(order_id)
         if not order.exists():
             return self._json_error(
@@ -352,6 +374,12 @@ class PortalController(http.Controller):
             )
 
         data = self._get_request_json()
+        if not isinstance(data, dict) or not data:
+            return self._json_error(
+                ERR_VALIDATION,
+                "Request payload cannot be empty.",
+                status=400
+            )
 
         # Validate order_id
         order_id = data.get('order_id')
@@ -369,6 +397,13 @@ class PortalController(http.Controller):
                 ERR_VALIDATION,
                 "Parameter order_id must be a valid integer.",
                 status=400
+            )
+
+        if order_id <= 0:
+            return self._json_error(
+                ERR_NOT_FOUND,
+                f"Quotation with ID {order_id} not found.",
+                status=404
             )
 
         order = request.env['sale.order'].sudo().browse(order_id)
@@ -416,8 +451,12 @@ class PortalController(http.Controller):
                 status=400
             )
 
-        requested_terms = data.get('requested_terms', '')
-        customer_note = data.get('customer_note', '')
+        import html
+        raw_terms = str(data.get('requested_terms') or '')
+        raw_note = str(data.get('customer_note') or '')
+        # Sanitize HTML tags to neutralize XSS injection attacks
+        requested_terms = html.escape(raw_terms)
+        customer_note = html.escape(raw_note)
         original_amount = float(data.get('original_amount') or order.amount_total)
 
         proposed_amount = data.get('proposed_amount')

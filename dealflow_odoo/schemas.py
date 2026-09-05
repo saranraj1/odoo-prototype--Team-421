@@ -54,6 +54,32 @@ class OdooExecutionError(DealFlowIntegrationError):
         super().__init__("ODOO_FAILURE", message, details)
 
 
+# Optional native Odoo exception imports with fallback definitions
+try:
+    from odoo.exceptions import (
+        AccessDenied as OdooAccessDenied,
+        AccessError as OdooAccessError,
+        MissingError as OdooMissingError,
+        UserError as OdooUserError,
+        ValidationError as OdooValidationError,
+    )
+except ImportError:
+    class OdooValidationError(Exception):
+        pass
+
+    class OdooAccessError(Exception):
+        pass
+
+    class OdooAccessDenied(Exception):
+        pass
+
+    class OdooMissingError(Exception):
+        pass
+
+    class OdooUserError(Exception):
+        pass
+
+
 @dataclass
 class CustomerDTO:
     id: int
@@ -135,10 +161,12 @@ class FulfillmentSplitItem:
 
 @dataclass
 class FulfillmentPlanDTO:
-    deal_id: Optional[str]
-    order_id: int
+    deal_id: Optional[str] = None
+    order_id: int = 0
     allocations: List[FulfillmentSplitItem] = field(default_factory=list)
     notes: Optional[str] = None
+    batch_id: Optional[str] = None
+    requested_qty: Optional[float] = None
 
 
 @dataclass

@@ -191,7 +191,7 @@ class InventoryAdapter:
                     details={"product_id": product_id},
                 )
             # In standard Odoo, product.qty_available is the total on-hand stock across internal locations
-            return float(product.qty_available)
+            return float(getattr(product, "qty_available", 0.0))
 
         # Standalone / In-memory execution
         wh_stocks = self.get_warehouse_stock(product_id)
@@ -427,26 +427,32 @@ class InventoryAdapter:
             order_id=order_id,
             allocations=allocations,
             notes=notes,
+            requested_qty=requested_qty,
         )
 
     def apply_fulfillment_plan(
         self,
         order_id: int,
         fulfillment_plan: FulfillmentPlanDTO,
+        batch_id: Optional[str] = None,
+        idempotent: bool = False,
     ) -> Dict[str, Any]:
         """Atomically execute a multi-warehouse fulfillment plan in Odoo.
 
+        - Validates order state (rejects cancelled and already delivered orders).
         - Validates all allocations against live warehouse stock.
-        - Raises ValidationError or InvalidStateError on stock violation or invalid state.
-        - Generates a unique dealflow_fulfillment_batch_id.
+        - Enforces strict protection against tampered plan quantities.
+        - Enforces idempotency and duplicate protection for fulfillment batches.
         - Records batch ID, split flag, and allocation details on stock pickings.
         - Returns execution status and created/updated picking IDs.
 
         :param order_id: Odoo sale.order ID.
         :param fulfillment_plan: FulfillmentPlanDTO containing split allocations.
+        :param batch_id: Optional specific batch ID to assign. If already executed, triggers duplicate protection.
+        :param idempotent: If True, duplicate batch execution returns existing status idempotently instead of raising.
         :return: Execution summary dictionary.
-        :raises ValidationError: If parameters or allocation data are invalid.
-        :raises InvalidStateError: On stock violations or cancelled order state.
+        :raises ValidationError: If parameters or allocation data are invalid or tampered.
+        :raises InvalidStateError: On stock violations, cancelled/delivered order state, or duplicate execution.
         :raises NotFoundError: If order or warehouse does not exist.
         """
         # 1. Parameter validations
@@ -493,7 +499,95 @@ class InventoryAdapter:
                     details={"allocation": str(alloc)},
                 )
 
-        # 2. Live stock validation across all allocations prior to state mutation
+        # 2. Strict tampering verification: sum of allocations != requested qty
+        if fulfillment_plan.requested_qty is not None:
+            if abs(total_plan_qty - fulfillment_plan.requested_qty) > 1e-4:
+                raise ValidationError(
+                    f"Tampered fulfillment plan: sum of allocation quantities ({total_plan_qty}) "
+                    f"does not match requested quantity ({fulfillment_plan.requested_qty}).",
+                    details={
+                        "order_id": order_id,
+                        "requested_qty": fulfillment_plan.requested_qty,
+                        "total_plan_qty": total_plan_qty,
+                        "discrepancy": round(total_plan_qty - fulfillment_plan.requested_qty, 4),
+                    },
+                )
+
+        # 3. Order existence and state validation (Cancel / Done rejection)
+        order: Any = None
+        if self.env is not None:
+            SaleOrder = self.env["sale.order"]
+            order = SaleOrder.browse(order_id)
+            if not order.exists():
+                raise NotFoundError(
+                    f"Sale order with ID {order_id} not found in Odoo.",
+                    details={"order_id": order_id},
+                )
+            order_state = getattr(order, "state", "")
+            if order_state in ("cancel", "done"):
+                state_desc = "cancelled" if order_state == "cancel" else "already delivered (done)"
+                raise InvalidStateError(
+                    f"Cannot apply fulfillment plan to {state_desc} sale order {order_id}.",
+                    details={"order_id": order_id, "state": order_state},
+                )
+        else:
+            if order_id not in self._orders:
+                raise NotFoundError(
+                    f"Sale order with ID {order_id} not found in adapter registry.",
+                    details={"order_id": order_id},
+                )
+            order = self._orders[order_id]
+            order_state = order.get("state")
+            if order_state in ("cancel", "done"):
+                state_desc = "cancelled" if order_state == "cancel" else "already delivered (done)"
+                raise InvalidStateError(
+                    f"Cannot apply fulfillment plan to {state_desc} sale order {order_id}.",
+                    details={"order_id": order_id, "state": order_state},
+                )
+
+        # 4. Resolve fulfillment batch ID & enforce duplicate protection / idempotency
+        target_batch_id = batch_id or fulfillment_plan.batch_id
+        if not target_batch_id:
+            unique_token = uuid.uuid4().hex[:6].upper()
+            target_batch_id = f"BATCH-SO{order_id}-{int(time.time())}-{unique_token}"
+            fulfillment_plan.batch_id = target_batch_id
+
+        # Check if this batch ID has already been applied
+        existing_picking_ids: List[int] = []
+        if self.env is not None:
+            existing_pickings = self.env["stock.picking"].search([
+                ("dealflow_fulfillment_batch_id", "=", target_batch_id)
+            ])
+            existing_picking_ids = [p.id for p in existing_pickings if hasattr(p, "id")]
+        else:
+            existing_picking_ids = [
+                p["picking_id"] for p in self._pickings
+                if p.get("dealflow_fulfillment_batch_id") == target_batch_id
+            ]
+
+        if existing_picking_ids:
+            if not idempotent:
+                raise InvalidStateError(
+                    f"Duplicate fulfillment plan execution: Batch '{target_batch_id}' has already been processed for order {order_id}.",
+                    details={
+                        "order_id": order_id,
+                        "batch_id": target_batch_id,
+                        "existing_picking_ids": existing_picking_ids,
+                    },
+                )
+            return {
+                "success": True,
+                "status": "already_applied",
+                "order_id": order_id,
+                "dealflow_fulfillment_batch_id": target_batch_id,
+                "picking_ids": existing_picking_ids,
+                "is_split": len(fulfillment_plan.allocations) > 1,
+                "total_allocated": round(total_plan_qty, 4),
+                "duplicate_prevented": True,
+                "message": f"Fulfillment batch '{target_batch_id}' was already executed; idempotent return without duplicate pickings.",
+            }
+
+        # 5. Live stock validation across all allocations prior to state mutation (TOCTOU defense)
         for alloc in fulfillment_plan.allocations:
             wh_stock = self._get_warehouse_stock_single(alloc.product_id, alloc.warehouse_id)
             if not wh_stock:
@@ -516,11 +610,7 @@ class InventoryAdapter:
                     },
                 )
 
-        # 3. Generate unique fulfillment batch ID and split payload
-        unique_token = uuid.uuid4().hex[:6].upper()
-        batch_id = f"BATCH-SO{order_id}-{int(time.time())}-{unique_token}"
         is_split = len(fulfillment_plan.allocations) > 1
-
         split_details_payload = json.dumps([
             {
                 "warehouse_id": a.warehouse_id,
@@ -533,23 +623,9 @@ class InventoryAdapter:
 
         created_picking_ids: List[int] = []
 
-        # 4. Atomic Execution Mode: Odoo ORM (with self.env.cr.savepoint)
+        # 6. Atomic Execution Mode: Odoo ORM (with self.env.cr.savepoint)
         if self.env is not None:
             with self.env.cr.savepoint():
-                SaleOrder = self.env["sale.order"]
-                order = SaleOrder.browse(order_id)
-                if not order.exists():
-                    raise NotFoundError(
-                        f"Sale order with ID {order_id} not found in Odoo.",
-                        details={"order_id": order_id},
-                    )
-
-                if order.state == "cancel":
-                    raise InvalidStateError(
-                        f"Cannot apply fulfillment plan to cancelled sale order {order_id}.",
-                        details={"order_id": order_id, "state": order.state},
-                    )
-
                 # Check existing open pickings; cancel them if performing multi-warehouse split
                 if hasattr(order.picking_ids, "filtered"):
                     open_pickings = order.picking_ids.filtered(lambda p: p.state not in ("done", "cancel"))
@@ -581,7 +657,7 @@ class InventoryAdapter:
                         "location_id": picking_type.default_location_src_id.id or wh.lot_stock_id.id,
                         "location_dest_id": dest_location_id,
                         "origin": order.name,
-                        "dealflow_fulfillment_batch_id": batch_id,
+                        "dealflow_fulfillment_batch_id": target_batch_id,
                         "dealflow_warehouse_split": is_split,
                         "dealflow_split_details": split_details_payload,
                         "sale_id": order.id,
@@ -609,21 +685,8 @@ class InventoryAdapter:
                     StockMove.create(move_vals)
                     created_picking_ids.append(new_picking.id)
 
-        # 5. Atomic Execution Mode: Standalone / In-Memory Store
+        # 7. Atomic Execution Mode: Standalone / In-Memory Store
         else:
-            if order_id not in self._orders:
-                raise NotFoundError(
-                    f"Sale order with ID {order_id} not found in adapter registry.",
-                    details={"order_id": order_id},
-                )
-
-            order = self._orders[order_id]
-            if order.get("state") == "cancel":
-                raise InvalidStateError(
-                    f"Cannot apply fulfillment plan to cancelled sale order {order_id}.",
-                    details={"order_id": order_id, "state": "cancel"},
-                )
-
             # Atomic reservation and picking generation
             for alloc in fulfillment_plan.allocations:
                 # Deduct available, increase reserved
@@ -641,8 +704,10 @@ class InventoryAdapter:
                     "order_id": order_id,
                     "warehouse_id": alloc.warehouse_id,
                     "warehouse_name": alloc.warehouse_name,
+                    "location_id": alloc.warehouse_id * 10,
+                    "location_dest_id": 5,
                     "origin": order.get("name", f"SO{order_id:04d}"),
-                    "dealflow_fulfillment_batch_id": batch_id,
+                    "dealflow_fulfillment_batch_id": target_batch_id,
                     "dealflow_warehouse_split": is_split,
                     "dealflow_split_details": split_details_payload,
                     "product_id": alloc.product_id,
@@ -657,7 +722,7 @@ class InventoryAdapter:
             "success": True,
             "status": "applied",
             "order_id": order_id,
-            "dealflow_fulfillment_batch_id": batch_id,
+            "dealflow_fulfillment_batch_id": target_batch_id,
             "picking_ids": created_picking_ids,
             "is_split": is_split,
             "total_allocated": round(total_plan_qty, 4),
@@ -673,6 +738,7 @@ class InventoryAdapter:
             "split_details": split_details_payload,
             "message": (
                 f"Fulfillment plan executed successfully: {len(created_picking_ids)} picking(s) created "
-                f"across {len(fulfillment_plan.allocations)} warehouse(s) under batch {batch_id}."
+                f"across {len(fulfillment_plan.allocations)} warehouse(s) under batch {target_batch_id}."
             ),
         }
+

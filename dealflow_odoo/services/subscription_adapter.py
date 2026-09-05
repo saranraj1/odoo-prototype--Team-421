@@ -285,61 +285,64 @@ class SubscriptionAdapter:
         if self.env is not None:
             order = self.env["sale.order"].browse(order_id)
             if not order.exists():
-                raise NotFoundError(f"Sale order {order_id} not found in Odoo.")
-
-            # Parse lines using parse_mixed_order
-            lines_data = []
-            for line in order.order_line:
-                lines_data.append({
-                    "id": line.id,
-                    "product_id": line.product_id.id,
-                    "product_name": line.name or line.product_id.display_name,
-                    "category_name": line.product_id.categ_id.name if line.product_id.categ_id else "",
-                    "product_uom_qty": line.product_uom_qty,
-                    "price_unit": line.price_unit,
-                    "discount": line.discount,
-                    "price_subtotal": line.price_subtotal,
-                    "is_recurring": getattr(line.product_id, "is_recurring", False) or getattr(line, "dealflow_is_recurring", False),
-                    "recurring_interval": getattr(line.product_id, "recurring_interval", None),
-                })
-
-            parsed = self.parse_mixed_order({"id": order_id, "lines": lines_data})
-            mrr = parsed["recurring_mrr"]
-            arr = parsed["recurring_arr"]
-            interval = parsed["billing_interval"] or "month"
-
-            # Derive subscription lifecycle state
-            order_state = order.state
-            if order_state in ("sale", "done") and parsed["has_recurring"]:
-                sub_state = "active"
-                is_active = True
-            elif order_state in ("draft", "sent"):
-                sub_state = "draft"
-                is_active = False
-            elif order_state == "cancel":
-                sub_state = "cancelled"
-                is_active = False
+                if order_id not in self._mock_orders:
+                    raise NotFoundError(f"Sale order {order_id} not found in Odoo.")
             else:
-                sub_state = "inactive"
-                is_active = False
+                # Parse lines using parse_mixed_order
+                lines_data = []
+                for line in order.order_line:
+                    lines_data.append({
+                        "id": line.id,
+                        "product_id": line.product_id.id,
+                        "product_name": line.name or line.product_id.display_name,
+                        "category_name": line.product_id.categ_id.name if line.product_id.categ_id else "",
+                        "product_uom_qty": line.product_uom_qty,
+                        "price_unit": line.price_unit,
+                        "discount": line.discount,
+                        "price_subtotal": line.price_subtotal,
+                        "is_recurring": getattr(line.product_id, "is_recurring", False) or getattr(line, "dealflow_is_recurring", False),
+                        "recurring_interval": getattr(line.product_id, "recurring_interval", None),
+                    })
 
-            # Retrieve or calculate renewal date
-            renewal_date: str
-            if hasattr(order, "next_invoice_date") and order.next_invoice_date:
-                renewal_date = str(order.next_invoice_date)
-            else:
-                date_base = str(order.date_order or datetime.now().strftime("%Y-%m-%d"))
-                renewal_date = _add_billing_period(date_base, interval)
+                parsed = self.parse_mixed_order({"id": order_id, "lines": lines_data})
+                mrr = parsed["recurring_mrr"]
+                arr = parsed["recurring_arr"]
+                interval = parsed["billing_interval"] or "month"
 
-            return {
-                "order_id": order_id,
-                "active": is_active,
-                "renewal_date": renewal_date,
-                "recurring_interval": interval,
-                "mrr": mrr,
-                "state": sub_state,
-                "arr": arr,
-            }
+                # Derive subscription lifecycle state
+                order_state = order.state
+                if order_state in ("sale", "done") and parsed["has_recurring"]:
+                    sub_state = "active"
+                    is_active = True
+                elif order_state in ("draft", "sent"):
+                    sub_state = "draft"
+                    is_active = False
+                elif order_state == "cancel":
+                    sub_state = "cancelled"
+                    is_active = False
+                else:
+                    sub_state = "inactive"
+                    is_active = False
+
+                # Retrieve or calculate renewal date
+                renewal_date: str
+                if hasattr(order, "next_invoice_date") and order.next_invoice_date:
+                    renewal_date = str(order.next_invoice_date)
+                else:
+                    date_base = str(order.date_order or datetime.now().strftime("%Y-%m-%d"))
+                    renewal_date = _add_billing_period(date_base, interval)
+
+                return {
+                    "order_id": order_id,
+                    "active": is_active,
+                    "renewal_date": renewal_date,
+                    "recurring_interval": interval,
+                    "mrr": mrr,
+                    "state": sub_state,
+                    "arr": arr,
+                    "has_recurring": parsed["has_recurring"],
+                }
+
 
         # 2. Odoo RPC Client execution
         if self.odoo_client is not None:
@@ -390,6 +393,7 @@ class SubscriptionAdapter:
                 "mrr": mrr,
                 "state": sub_state,
                 "arr": arr,
+                "has_recurring": parsed["has_recurring"],
             }
 
         # 3. Standalone / Test In-Memory execution
@@ -432,6 +436,7 @@ class SubscriptionAdapter:
             "mrr": mrr,
             "state": sub_state,
             "arr": arr,
+            "has_recurring": parsed["has_recurring"],
         }
 
     def trigger_subscription_renewal(self, order_id: int) -> Dict[str, Any]:
@@ -464,9 +469,13 @@ class SubscriptionAdapter:
         order_id = int(order_id)
         status = self.get_subscription_status(order_id)
 
-        if status["mrr"] <= 0.0:
+        if not status.get("has_recurring", False) and status["mrr"] <= 0.0:
             raise ValidationError(
                 f"Order {order_id} has no recurring subscription items to renew."
+            )
+        if status["mrr"] < 0.0:
+            raise ValidationError(
+                f"Order {order_id} recurring revenue cannot be negative."
             )
 
         if not status["active"]:
@@ -482,41 +491,44 @@ class SubscriptionAdapter:
 
         # 1. Native Odoo ORM execution
         if self.env is not None:
-            try:
-                order = self.env["sale.order"].browse(order_id)
-                deal_id = getattr(order, "dealflow_deal_id", None)
+            order = self.env["sale.order"].browse(order_id)
+            if order.exists():
+                try:
+                    deal_id = getattr(order, "dealflow_deal_id", None)
 
-                # Create recurring renewal invoice
-                invoice_vals = {
-                    "move_type": "out_invoice",
-                    "partner_id": order.partner_id.id,
-                    "invoice_date": datetime.now().strftime("%Y-%m-%d"),
-                    "invoice_origin": f"{order.name} Renewal ({next_renewal_date})",
-                    "dealflow_deal_id": deal_id,
-                    "dealflow_is_recurring": True,
-                }
-                new_move = self.env["account.move"].create(invoice_vals)
+                    # Create recurring renewal invoice
+                    invoice_vals = {
+                        "move_type": "out_invoice",
+                        "partner_id": order.partner_id.id,
+                        "invoice_date": datetime.now().strftime("%Y-%m-%d"),
+                        "invoice_origin": f"{order.name} Renewal ({next_renewal_date})",
+                        "dealflow_deal_id": deal_id,
+                        "dealflow_is_recurring": True,
+                    }
+                    new_move = self.env["account.move"].create(invoice_vals)
 
-                # Update next invoice date on order if model supports it
-                if hasattr(order, "next_invoice_date"):
-                    order.write({"next_invoice_date": next_renewal_date})
+                    # Update next invoice date on order if model supports it
+                    if hasattr(order, "next_invoice_date"):
+                        order.write({"next_invoice_date": next_renewal_date})
 
-                return {
-                    "success": True,
-                    "order_id": order_id,
-                    "renewal_invoice_id": new_move.id,
-                    "renewal_invoice_name": new_move.name or f"INV/{new_move.id}",
-                    "amount_invoiced": round(amount_to_invoice, 2),
-                    "previous_renewal_date": prev_renewal_date,
-                    "next_renewal_date": next_renewal_date,
-                    "recurring_interval": interval,
-                    "state": "renewed",
-                    "message": f"Successfully generated subscription renewal invoice {new_move.name or new_move.id}.",
-                }
-            except Exception as exc:
-                raise OdooExecutionError(
-                    f"Failed to generate renewal invoice for order {order_id}: {str(exc)}"
-                ) from exc
+                    return {
+                        "success": True,
+                        "order_id": order_id,
+                        "renewal_invoice_id": new_move.id,
+                        "renewal_invoice_name": new_move.name or f"INV/{new_move.id}",
+                        "amount_invoiced": round(amount_to_invoice, 2),
+                        "previous_renewal_date": prev_renewal_date,
+                        "next_renewal_date": next_renewal_date,
+                        "recurring_interval": interval,
+                        "state": "renewed",
+                        "message": f"Successfully generated subscription renewal invoice {new_move.name or new_move.id}.",
+                    }
+                except Exception as exc:
+                    raise OdooExecutionError(
+                        f"Failed to generate renewal invoice for order {order_id}: {str(exc)}"
+                    ) from exc
+            elif order_id not in self._mock_orders:
+                raise NotFoundError(f"Sale order {order_id} not found in Odoo.")
 
         # 2. Odoo RPC Client execution
         if self.odoo_client is not None:

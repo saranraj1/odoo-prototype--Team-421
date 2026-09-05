@@ -112,7 +112,34 @@ class AccountingAdapter:
             InvalidStateError: If the order is not in a confirmed state ('sale' or 'done').
             OdooExecutionError: If invoice creation fails in Odoo.
         """
-        order_id = int(order_id)
+        # Guard against double invoicing if order is already fully invoiced
+        existing_invoices = self.get_order_invoices(order_id)
+        active_invoices = [
+            inv for inv in existing_invoices
+            if inv.get("state") != "cancel" and inv.get("move_type") != "out_refund"
+        ]
+        if active_invoices:
+            total_already_invoiced = sum(inv.get("amount_total", 0.0) for inv in active_invoices)
+            if self.env is not None:
+                ord_obj = self.env["sale.order"].browse(order_id)
+                ord_total = float(ord_obj.amount_total) if ord_obj.exists() else 0.0
+            elif self.odoo_client is not None:
+                ords = self.odoo_client.execute_kw("sale.order", "read", [[order_id]], {"fields": ["amount_total"]})
+                ord_total = float(ords[0].get("amount_total", 0.0)) if ords else 0.0
+            else:
+                ord_total = float(self._mock_orders.get(order_id, {}).get("amount_total", 0.0))
+
+            if ord_total > 0 and total_already_invoiced >= ord_total:
+                raise InvalidStateError(
+                    f"Sale order {order_id} is already fully invoiced "
+                    f"(${total_already_invoiced:.2f} invoiced of ${ord_total:.2f} total). "
+                    "Cannot create duplicate invoices without additional deliverables or milestones."
+                )
+            elif ord_total == 0.0 and len(active_invoices) > 0:
+                raise InvalidStateError(
+                    f"Sale order {order_id} is already invoiced. "
+                    "Cannot create duplicate invoices for zero-amount orders."
+                )
 
         # 1. Native Odoo ORM execution (when running inside Odoo runtime)
         if self.env is not None:
@@ -302,6 +329,9 @@ class AccountingAdapter:
                 amount_residual = float(move.amount_residual)
                 amount_total = float(move.amount_total)
 
+                move_type = getattr(move, "move_type", "out_invoice") or "out_invoice"
+                is_paid = (payment_state == "paid" or (amount_total > 0 and amount_residual <= 0.0) or (amount_total == 0.0 and amount_residual <= 0.0 and move.state == "posted"))
+
                 return {
                     "invoice_id": move.id,
                     "name": move.name or f"INV/{move.id}",
@@ -309,7 +339,8 @@ class AccountingAdapter:
                     "amount_total": round(amount_total, 2),
                     "amount_residual": round(amount_residual, 2),
                     "payment_state": payment_state,
-                    "is_paid": (payment_state == "paid" or (amount_total > 0 and amount_residual <= 0.0)),
+                    "is_paid": is_paid,
+                    "move_type": move_type,
                     "dealflow_deal_id": getattr(move, "dealflow_deal_id", None),
                     "dealflow_is_recurring": bool(getattr(move, "dealflow_is_recurring", False)),
                 }
@@ -335,6 +366,7 @@ class AccountingAdapter:
                             "amount_total",
                             "amount_residual",
                             "payment_state",
+                            "move_type",
                             "dealflow_deal_id",
                             "dealflow_is_recurring",
                         ]
@@ -347,15 +379,19 @@ class AccountingAdapter:
                 payment_state = m.get("payment_state") or "not_paid"
                 amount_residual = float(m.get("amount_residual", 0.0))
                 amount_total = float(m.get("amount_total", 0.0))
+                move_state = m.get("state", "draft")
+                move_type = m.get("move_type") or "out_invoice"
+                is_paid = (payment_state == "paid" or (amount_total > 0 and amount_residual <= 0.0) or (amount_total == 0.0 and amount_residual <= 0.0 and move_state == "posted"))
 
                 return {
                     "invoice_id": m.get("id"),
                     "name": m.get("name") or f"INV/{invoice_id}",
-                    "state": m.get("state", "draft"),
+                    "state": move_state,
                     "amount_total": round(amount_total, 2),
                     "amount_residual": round(amount_residual, 2),
                     "payment_state": payment_state,
-                    "is_paid": (payment_state == "paid" or (amount_total > 0 and amount_residual <= 0.0)),
+                    "is_paid": is_paid,
+                    "move_type": move_type,
                     "dealflow_deal_id": m.get("dealflow_deal_id"),
                     "dealflow_is_recurring": bool(m.get("dealflow_is_recurring", False)),
                 }
@@ -374,15 +410,19 @@ class AccountingAdapter:
         amount_total = float(inv.get("amount_total", 0.0))
         amount_residual = float(inv.get("amount_residual", 0.0))
         payment_state = inv.get("payment_state", "not_paid")
+        inv_state = inv.get("state", "posted")
+        move_type = inv.get("move_type", "out_invoice")
+        is_paid = (payment_state == "paid" or (amount_total > 0 and amount_residual <= 0.0) or (amount_total == 0.0 and amount_residual <= 0.0 and inv_state == "posted"))
 
         return {
             "invoice_id": invoice_id,
             "name": inv.get("name", f"INV/{invoice_id}"),
-            "state": inv.get("state", "posted"),
+            "state": inv_state,
             "amount_total": round(amount_total, 2),
             "amount_residual": round(amount_residual, 2),
             "payment_state": payment_state,
-            "is_paid": (payment_state == "paid" or (amount_total > 0 and amount_residual <= 0.0)),
+            "is_paid": is_paid,
+            "move_type": move_type,
             "dealflow_deal_id": inv.get("dealflow_deal_id"),
             "dealflow_is_recurring": bool(inv.get("dealflow_is_recurring", False)),
         }
@@ -489,20 +529,43 @@ class AccountingAdapter:
         # Calculate metrics across non-cancelled invoices
         valid_invoices = [inv for inv in invoices if inv.get("state") != "cancel"]
         if not valid_invoices:
+            if self.env is not None:
+                order = self.env["sale.order"].browse(order_id)
+                total_expected = float(order.amount_total) if order.exists() else 0.0
+            elif self.odoo_client is not None:
+                orders = self.odoo_client.execute_kw(
+                    "sale.order",
+                    "read",
+                    [[order_id]],
+                    {"fields": ["id", "amount_total"]},
+                )
+                total_expected = float(orders[0].get("amount_total", 0.0)) if orders else 0.0
+            else:
+                total_expected = float(self._mock_orders.get(order_id, {}).get("amount_total", 0.0))
+
             return {
                 "order_id": order_id,
                 "is_paid": False,
                 "amount_paid": 0.0,
-                "amount_due": 0.0,
+                "amount_due": round(total_expected, 2),
                 "payment_state": "not_paid",
                 "invoices_count": len(invoices),
             }
 
-        total_invoiced = sum(inv["amount_total"] for inv in valid_invoices)
-        total_due = sum(inv["amount_residual"] for inv in valid_invoices)
+        total_invoiced = 0.0
+        total_due = 0.0
+        for inv in valid_invoices:
+            if inv.get("move_type") == "out_refund":
+                total_invoiced -= inv["amount_total"]
+                total_due -= inv["amount_residual"]
+            else:
+                total_invoiced += inv["amount_total"]
+                total_due += inv["amount_residual"]
+
+        total_due = max(0.0, total_due)
         total_paid = max(0.0, total_invoiced - total_due)
 
-        is_paid = (total_invoiced > 0.0 and total_due <= 0.0)
+        is_paid = (total_due <= 0.0 and (total_invoiced > 0.0 or any(inv.get("amount_total", 0.0) == 0.0 for inv in valid_invoices)))
 
         # Determine consolidated payment_state
         if is_paid:
@@ -542,16 +605,43 @@ class AccountingAdapter:
 
         Returns:
             Dict with updated invoice financial summary.
+
+        Raises:
+            ValidationError: If payment amount is negative.
+            InvalidStateError: If recording payment on a cancelled invoice.
+            NotFoundError: If invoice is not found.
         """
+        if amount is not None and float(amount) < 0:
+            raise ValidationError("Payment amount cannot be negative.")
+
         invoice = self.get_invoice(invoice_id)
+        if invoice.get("state") == "cancel":
+            raise InvalidStateError(f"Cannot record payment on cancelled invoice {invoice_id}.")
+
         residual = invoice["amount_residual"]
 
         pay_amount = residual if (amount is None or amount > residual) else float(amount)
         new_residual = max(0.0, residual - pay_amount)
         new_state = "paid" if new_residual <= 0.0 else "in_payment"
 
-        # Update in-memory mock if present
-        if invoice_id in self._mock_invoices:
+        # 1. Native Odoo ORM execution
+        if self.env is not None:
+            move = self.env["account.move"].browse(invoice_id)
+            if not move.exists():
+                raise NotFoundError(f"Invoice {invoice_id} not found in Odoo.")
+            move.write({
+                "amount_residual": new_residual,
+                "payment_state": new_state,
+            })
+        # 2. Odoo RPC Client execution
+        elif self.odoo_client is not None:
+            self.odoo_client.execute_kw(
+                "account.move",
+                "write",
+                [[invoice_id], {"amount_residual": new_residual, "payment_state": new_state}],
+            )
+        # 3. In-memory mock execution
+        elif invoice_id in self._mock_invoices:
             self._mock_invoices[invoice_id]["amount_residual"] = new_residual
             self._mock_invoices[invoice_id]["payment_state"] = new_state
 

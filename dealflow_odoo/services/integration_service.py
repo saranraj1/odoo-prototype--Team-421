@@ -7,7 +7,9 @@ forbidden from directly accessing the Odoo ORM or API.
 
 from __future__ import annotations
 
+import copy
 import logging
+import threading
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
@@ -44,30 +46,13 @@ from dealflow_odoo.schemas import (
 )
 from dealflow_odoo.services.event_dispatcher import EventDispatcher, get_event_dispatcher
 
-# Optional Odoo imports
-try:
-    from odoo.exceptions import (
-        AccessDenied as OdooAccessDenied,
-        AccessError as OdooAccessError,
-        MissingError as OdooMissingError,
-        UserError as OdooUserError,
-        ValidationError as OdooValidationError,
-    )
-except ImportError:
-    class OdooValidationError(Exception):
-        pass
-
-    class OdooAccessError(Exception):
-        pass
-
-    class OdooAccessDenied(Exception):
-        pass
-
-    class OdooMissingError(Exception):
-        pass
-
-    class OdooUserError(Exception):
-        pass
+from dealflow_odoo.schemas import (
+    OdooAccessDenied,
+    OdooAccessError,
+    OdooMissingError,
+    OdooUserError,
+    OdooValidationError,
+)
 
 # Optional adapter imports (dynamic composition)
 try:
@@ -162,6 +147,7 @@ class OdooIntegrationService:
             self.accounting_adapter = None
 
         self._audit_logs: List[Dict[str, Any]] = []
+        self._audit_lock = threading.Lock()
 
     # -------------------------------------------------------------------------
     # Structured Audit Logging & Error Translation Boundary
@@ -189,9 +175,10 @@ class OdooIntegrationService:
             "failure_reason": failure_reason,
             "details": details or {},
         }
-        self._audit_logs.append(entry)
-        if len(self._audit_logs) > 1000:
-            self._audit_logs.pop(0)
+        with self._audit_lock:
+            self._audit_logs.append(entry)
+            if len(self._audit_logs) > 1000:
+                self._audit_logs.pop(0)
 
         log_level = logging.INFO if result == "SUCCESS" else logging.ERROR
         logger.log(
@@ -218,36 +205,42 @@ class OdooIntegrationService:
     ):
         """Context manager translating exceptions and recording structured audit logs."""
         start_time = datetime.now(timezone.utc).isoformat()
+        ctx = {
+            "dealflow_deal_id": dealflow_deal_id,
+            "record_id": record_id,
+            "actor": actor or self.actor,
+            "details": details or {},
+        }
         try:
-            yield
+            yield ctx
             self._log_audit(
                 operation=operation,
-                dealflow_deal_id=dealflow_deal_id,
-                record_id=record_id,
-                actor=actor or self.actor,
+                dealflow_deal_id=ctx.get("dealflow_deal_id", dealflow_deal_id),
+                record_id=ctx.get("record_id", record_id),
+                actor=ctx.get("actor", actor or self.actor),
                 timestamp=start_time,
                 result="SUCCESS",
-                details=details,
+                details=ctx.get("details", details),
             )
         except DealFlowIntegrationError as err:
             self._log_audit(
                 operation=operation,
-                dealflow_deal_id=dealflow_deal_id,
-                record_id=record_id,
-                actor=actor or self.actor,
+                dealflow_deal_id=ctx.get("dealflow_deal_id", dealflow_deal_id),
+                record_id=ctx.get("record_id", record_id),
+                actor=ctx.get("actor", actor or self.actor),
                 timestamp=start_time,
                 result="FAILURE",
                 failure_reason=err.message,
-                details={"code": err.code, **(err.details or {})},
+                details={"code": err.code, **(err.details or {}), **(ctx.get("details") or {})},
             )
             raise
         except OdooValidationError as err:
             msg = str(err)
             self._log_audit(
                 operation=operation,
-                dealflow_deal_id=dealflow_deal_id,
-                record_id=record_id,
-                actor=actor or self.actor,
+                dealflow_deal_id=ctx.get("dealflow_deal_id", dealflow_deal_id),
+                record_id=ctx.get("record_id", record_id),
+                actor=ctx.get("actor", actor or self.actor),
                 timestamp=start_time,
                 result="FAILURE",
                 failure_reason=msg,
@@ -257,9 +250,9 @@ class OdooIntegrationService:
             msg = str(err)
             self._log_audit(
                 operation=operation,
-                dealflow_deal_id=dealflow_deal_id,
-                record_id=record_id,
-                actor=actor or self.actor,
+                dealflow_deal_id=ctx.get("dealflow_deal_id", dealflow_deal_id),
+                record_id=ctx.get("record_id", record_id),
+                actor=ctx.get("actor", actor or self.actor),
                 timestamp=start_time,
                 result="FAILURE",
                 failure_reason=msg,
@@ -269,9 +262,9 @@ class OdooIntegrationService:
             msg = str(err)
             self._log_audit(
                 operation=operation,
-                dealflow_deal_id=dealflow_deal_id,
-                record_id=record_id,
-                actor=actor or self.actor,
+                dealflow_deal_id=ctx.get("dealflow_deal_id", dealflow_deal_id),
+                record_id=ctx.get("record_id", record_id),
+                actor=ctx.get("actor", actor or self.actor),
                 timestamp=start_time,
                 result="FAILURE",
                 failure_reason=msg,
@@ -281,9 +274,9 @@ class OdooIntegrationService:
             msg = str(err)
             self._log_audit(
                 operation=operation,
-                dealflow_deal_id=dealflow_deal_id,
-                record_id=record_id,
-                actor=actor or self.actor,
+                dealflow_deal_id=ctx.get("dealflow_deal_id", dealflow_deal_id),
+                record_id=ctx.get("record_id", record_id),
+                actor=ctx.get("actor", actor or self.actor),
                 timestamp=start_time,
                 result="FAILURE",
                 failure_reason=msg,
@@ -296,9 +289,9 @@ class OdooIntegrationService:
             msg = f"Execution failed during {operation}: {str(err)}"
             self._log_audit(
                 operation=operation,
-                dealflow_deal_id=dealflow_deal_id,
-                record_id=record_id,
-                actor=actor or self.actor,
+                dealflow_deal_id=ctx.get("dealflow_deal_id", dealflow_deal_id),
+                record_id=ctx.get("record_id", record_id),
+                actor=ctx.get("actor", actor or self.actor),
                 timestamp=start_time,
                 result="FAILURE",
                 failure_reason=msg,
@@ -307,13 +300,35 @@ class OdooIntegrationService:
 
     def get_audit_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Retrieve recent audit logs in reverse chronological order."""
-        logs = list(self._audit_logs)
-        logs.reverse()
-        return logs[:limit]
+        with self._audit_lock:
+            logs = [copy.deepcopy(e) for e in reversed(self._audit_logs[-limit:])]
+            return logs
 
     # -------------------------------------------------------------------------
     # Core Operations: Customer & Product
     # -------------------------------------------------------------------------
+
+    def _resolve_order_deal_id(self, order_id: int, fallback: Optional[str] = None) -> Optional[str]:
+        """Attempt to resolve dealflow_deal_id from order for accurate audit trails."""
+        if fallback:
+            return fallback
+        if self.sales_adapter and hasattr(self.sales_adapter, "_resolve_env"):
+            try:
+                active_env = self.sales_adapter._resolve_env(None)
+                if active_env and "sale.order" in active_env:
+                    so = active_env["sale.order"].browse(order_id)
+                    if so and getattr(so, "exists", lambda: True)():
+                        return getattr(so, "dealflow_deal_id", None)
+            except Exception:
+                pass
+        if self.env and "sale.order" in self.env:
+            try:
+                so = self.env["sale.order"].browse(order_id)
+                if so and getattr(so, "exists", lambda: True)():
+                    return getattr(so, "dealflow_deal_id", None)
+            except Exception:
+                pass
+        return fallback
 
     def get_customer(self, partner_id: int) -> CustomerDTO:
         """Fetch customer profile from Odoo as CustomerDTO.
@@ -403,9 +418,12 @@ class OdooIntegrationService:
         Returns:
             Dictionary representing the order, lines, and DealFlow status.
         """
-        with self._operation_boundary("get_order", record_id=order_id):
+        with self._operation_boundary("get_order", record_id=order_id) as ctx:
             if self.sales_adapter and hasattr(self.sales_adapter, "get_order"):
-                return self.sales_adapter.get_order(order_id)
+                res = self.sales_adapter.get_order(order_id)
+                if isinstance(res, dict) and res.get("dealflow_deal_id"):
+                    ctx["dealflow_deal_id"] = res["dealflow_deal_id"]
+                return res
 
             if not self.env:
                 raise OdooExecutionError("Odoo environment or SalesAdapter is required")
@@ -413,6 +431,7 @@ class OdooIntegrationService:
             order = self.env["sale.order"].browse(order_id)
             if not order.exists():
                 raise NotFoundError(f"Sale order with ID {order_id} does not exist")
+            ctx["dealflow_deal_id"] = getattr(order, "dealflow_deal_id", None)
 
             lines = []
             for line in order.order_line:
@@ -456,9 +475,12 @@ class OdooIntegrationService:
         Returns:
             DealContextDTO instance.
         """
-        with self._operation_boundary("get_deal_context", record_id=order_id):
+        with self._operation_boundary("get_deal_context", record_id=order_id) as ctx:
             if self.sales_adapter and hasattr(self.sales_adapter, "get_deal_context"):
-                return self.sales_adapter.get_deal_context(order_id)
+                res = self.sales_adapter.get_deal_context(order_id)
+                if hasattr(res, "deal_id") and res.deal_id:
+                    ctx["dealflow_deal_id"] = res.deal_id
+                return res
 
             if not self.env:
                 raise OdooExecutionError("Odoo environment or SalesAdapter is required")
@@ -466,6 +488,7 @@ class OdooIntegrationService:
             order = self.env["sale.order"].browse(order_id)
             if not order.exists():
                 raise NotFoundError(f"Sale order with ID {order_id} does not exist")
+            ctx["dealflow_deal_id"] = getattr(order, "dealflow_deal_id", None)
 
             # Check if model has native action_get_deal_context method
             if hasattr(order, "action_get_deal_context"):
@@ -585,7 +608,7 @@ class OdooIntegrationService:
         Returns:
             Dict summary of updated order.
         """
-        deal_id = values.get("dealflow_deal_id")
+        deal_id = self._resolve_order_deal_id(order_id, fallback=values.get("dealflow_deal_id"))
         with self._operation_boundary("update_order", record_id=order_id, dealflow_deal_id=deal_id):
             if self.sales_adapter and hasattr(self.sales_adapter, "update_order"):
                 res = self.sales_adapter.update_order(order_id, values)
@@ -635,7 +658,7 @@ class OdooIntegrationService:
         Returns:
             Dict summary of applied updates.
         """
-        deal_id = changes.get("dealflow_deal_id")
+        deal_id = self._resolve_order_deal_id(order_id, fallback=changes.get("dealflow_deal_id"))
         with self._operation_boundary("apply_approved_change", record_id=order_id, dealflow_deal_id=deal_id):
             if self.sales_adapter and hasattr(self.sales_adapter, "apply_approved_change"):
                 res = self.sales_adapter.apply_approved_change(order_id, changes)
@@ -698,13 +721,37 @@ class OdooIntegrationService:
         Returns:
             Dict containing confirmation status and new order state.
         """
-        with self._operation_boundary("confirm_order", record_id=order_id):
+        deal_id = None
+        if self.sales_adapter and hasattr(self.sales_adapter, "_resolve_env"):
+            try:
+                active_env = self.sales_adapter._resolve_env(None)
+                if active_env and "sale.order" in active_env:
+                    so = active_env["sale.order"].browse(order_id)
+                    if so and getattr(so, "exists", lambda: True)():
+                        deal_id = getattr(so, "dealflow_deal_id", None)
+            except Exception:
+                pass
+        elif self.env and "sale.order" in self.env:
+            try:
+                so = self.env["sale.order"].browse(order_id)
+                if so and getattr(so, "exists", lambda: True)():
+                    deal_id = getattr(so, "dealflow_deal_id", None)
+            except Exception:
+                pass
+
+        with self._operation_boundary("confirm_order", record_id=order_id, dealflow_deal_id=deal_id) as ctx:
             if self.sales_adapter and hasattr(self.sales_adapter, "confirm_order"):
                 res = self.sales_adapter.confirm_order(order_id, approval_token=approval_token)
+                resolved_deal_id = res.get("dealflow_deal_id") if isinstance(res, dict) else None
+                if resolved_deal_id:
+                    ctx["dealflow_deal_id"] = resolved_deal_id
             elif self.env:
                 order = self.env["sale.order"].browse(order_id)
                 if not order.exists():
                     raise NotFoundError(f"Sale order {order_id} does not exist")
+
+                deal_id = getattr(order, "dealflow_deal_id", None)
+                ctx["dealflow_deal_id"] = deal_id
 
                 # Governance Guard
                 is_locked = bool(getattr(order, "dealflow_locked", False))
@@ -725,11 +772,11 @@ class OdooIntegrationService:
                     res = order.action_dealflow_confirm()
                 else:
                     order.action_confirm()
-                    res = {"order_id": order.id, "state": order.state, "confirmed": True}
+                    res = {"order_id": order.id, "state": order.state, "confirmed": True, "dealflow_deal_id": deal_id}
             else:
                 raise OdooExecutionError("Odoo environment or SalesAdapter is required")
 
-            deal_id = res.get("dealflow_deal_id") if isinstance(res, dict) else None
+            deal_id = ctx.get("dealflow_deal_id") or (res.get("dealflow_deal_id") if isinstance(res, dict) else None)
             self.event_dispatcher.dispatch(
                 event_type=EVENT_ORDER_CONFIRMED,
                 record_id=order_id,
@@ -868,13 +915,20 @@ class OdooIntegrationService:
         Returns:
             Dict with invoice_id, state, amount_total.
         """
-        with self._operation_boundary("create_invoice", record_id=order_id):
+        with self._operation_boundary("create_invoice", record_id=order_id) as ctx:
             if self.accounting_adapter and hasattr(self.accounting_adapter, "create_invoice"):
                 res = self.accounting_adapter.create_invoice(order_id)
+                deal_id = res.get("dealflow_deal_id") if isinstance(res, dict) else None
+                if deal_id:
+                    ctx["dealflow_deal_id"] = deal_id
             elif self.env:
                 order = self.env["sale.order"].browse(order_id)
                 if not order.exists():
                     raise NotFoundError(f"Sale order {order_id} does not exist")
+
+                deal_id = getattr(order, "dealflow_deal_id", None)
+                ctx["dealflow_deal_id"] = deal_id
+
                 if order.state != "sale":
                     raise InvalidStateError(
                         f"Cannot invoice order {order_id} in state '{order.state}'. Order must be confirmed ('sale')."
@@ -892,12 +946,13 @@ class OdooIntegrationService:
                     "invoice_ids": invoices.ids,
                     "state": inv.state,
                     "amount_total": float(inv.amount_total or 0.0),
+                    "dealflow_deal_id": deal_id,
                 }
             else:
                 raise OdooExecutionError("Odoo environment or AccountingAdapter is required")
 
+            deal_id = ctx.get("dealflow_deal_id") or (res.get("dealflow_deal_id") if isinstance(res, dict) else None)
             invoice_id = res.get("invoice_id")
-            deal_id = res.get("dealflow_deal_id")
             self.event_dispatcher.dispatch(
                 event_type=EVENT_INVOICE_CREATED,
                 record_id=invoice_id or order_id,
@@ -947,7 +1002,7 @@ class OdooIntegrationService:
         Returns:
             Dict with payment status summary.
         """
-        with self._operation_boundary("get_payment_status", record_id=order_id):
+        with self._operation_boundary("get_payment_status", record_id=order_id) as ctx:
             if self.accounting_adapter and hasattr(self.accounting_adapter, "get_payment_status"):
                 return self.accounting_adapter.get_payment_status(order_id)
 
@@ -957,6 +1012,7 @@ class OdooIntegrationService:
             order = self.env["sale.order"].browse(order_id)
             if not order.exists():
                 raise NotFoundError(f"Sale order {order_id} does not exist")
+            ctx["dealflow_deal_id"] = getattr(order, "dealflow_deal_id", None)
 
             invoices = order.invoice_ids
             if not invoices:
@@ -1011,13 +1067,16 @@ class OdooIntegrationService:
             Dict confirmation of submitted negotiation.
         """
         changes_dict = asdict(proposed_changes) if is_dataclass(proposed_changes) else dict(proposed_changes)
-        with self._operation_boundary("submit_negotiation", record_id=order_id):
+        with self._operation_boundary("submit_negotiation", record_id=order_id) as ctx:
             if self.sales_adapter and hasattr(self.sales_adapter, "submit_negotiation"):
                 res = self.sales_adapter.submit_negotiation(order_id, customer_id, proposed_changes)
             elif self.env:
                 order = self.env["sale.order"].browse(order_id)
                 if not order.exists():
                     raise NotFoundError(f"Sale order {order_id} does not exist")
+
+                deal_id = getattr(order, "dealflow_deal_id", None)
+                ctx["dealflow_deal_id"] = deal_id
 
                 # IDOR Security Check
                 if order.partner_id.id != customer_id:
