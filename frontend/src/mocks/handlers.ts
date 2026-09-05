@@ -322,8 +322,10 @@ export const handlers = [
     const body = (await request.json().catch(() => ({}))) as any;
     const ws = mockState.getOrCreateWorkspace(id);
     const reason = body?.reason || 'Quotation approved';
+    const authHeader = request.headers.get('Authorization') || '';
+    const isFinance = authHeader.includes('finance');
 
-    if (ws.approval.state === 'PENDING_MANAGER' && ws.deal.required_level === 'MANAGER_AND_FINANCE') {
+    if (!isFinance && ws.approval.state === 'PENDING_MANAGER' && ws.deal.required_level === 'MANAGER_AND_FINANCE') {
       ws.approval.state = 'PENDING_FINANCE';
       ws.deal.approval_state = 'PENDING_FINANCE';
       ws.timeline.unshift({
@@ -359,8 +361,8 @@ export const handlers = [
       ws.timeline.unshift({
         id: `t_${Date.now()}`,
         event_type: 'APPROVED',
-        actor_name: 'Vikram Mehta (Finance Officer)',
-        actor_role: 'FINANCE',
+        actor_name: isFinance ? 'Vikram Mehta (Finance Officer)' : 'Sunita Sharma (Sales Manager)',
+        actor_role: isFinance ? 'FINANCE' : 'SALES_MANAGER',
         reason,
         created_at: new Date().toISOString(),
         summary: 'Governance approval granted and Odoo quotation unlocked',
@@ -397,6 +399,8 @@ export const handlers = [
     const body = (await request.json().catch(() => ({}))) as any;
     const ws = mockState.getOrCreateWorkspace(id);
     const reason = body?.reason || 'Quotation rejected';
+    const authHeader = request.headers.get('Authorization') || '';
+    const isFinance = authHeader.includes('finance');
 
     ws.approval.state = 'REJECTED';
     ws.deal.approval_state = 'REJECTED';
@@ -405,8 +409,8 @@ export const handlers = [
     ws.timeline.unshift({
       id: `t_${Date.now()}`,
       event_type: 'REJECTED',
-      actor_name: 'Approver',
-      actor_role: 'SALES_MANAGER',
+      actor_name: isFinance ? 'Vikram Mehta (Finance Officer)' : 'Sunita Sharma (Sales Manager)',
+      actor_role: isFinance ? 'FINANCE' : 'SALES_MANAGER',
       reason,
       created_at: new Date().toISOString(),
       summary: 'Quotation rejected by governance',
@@ -443,6 +447,8 @@ export const handlers = [
     const body = (await request.json().catch(() => ({}))) as any;
     const ws = mockState.getOrCreateWorkspace(id);
     const reason = body?.reason || 'Quotation returned for revision';
+    const authHeader = request.headers.get('Authorization') || '';
+    const isFinance = authHeader.includes('finance');
 
     ws.approval.state = 'RETURNED';
     ws.deal.approval_state = 'RETURNED';
@@ -451,8 +457,8 @@ export const handlers = [
     ws.timeline.unshift({
       id: `t_${Date.now()}`,
       event_type: 'RETURNED',
-      actor_name: 'Approver',
-      actor_role: 'SALES_MANAGER',
+      actor_name: isFinance ? 'Vikram Mehta (Finance Officer)' : 'Sunita Sharma (Sales Manager)',
+      actor_role: isFinance ? 'FINANCE' : 'SALES_MANAGER',
       reason,
       created_at: new Date().toISOString(),
       summary: 'Returned to sales representative for revision',

@@ -11,12 +11,14 @@ import { dealsApi } from '@/api/endpoints/deals';
 import { approvalsApi } from '@/api/endpoints/approvals';
 import { queryKeys } from '@/api/queryKeys';
 import { formatPct, formatAbsoluteDate } from '@/lib/format';
+import { useAuthStore } from '@/features/auth/authStore';
 import { ArrowLeft, CheckCircle, RotateCcw, XCircle, ArrowUpRight } from 'lucide-react';
 
 export const ApprovalDetailPage: React.FC = () => {
   const { dealId = 'deal_d1024_acme' } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
 
   const [decisionModalOpen, setDecisionModalOpen] = useState(false);
   const [decisionType, setDecisionType] = useState<'APPROVE' | 'REJECT' | 'RETURN' | 'ESCALATE'>('APPROVE');
@@ -98,6 +100,36 @@ export const ApprovalDetailPage: React.FC = () => {
 
   const { deal, customer, quote, risk, approval, timeline } = workspace;
 
+  const rejectionEvent = timeline.find((e) => e.event_type === 'REJECTED');
+  const returnEvent = timeline.find((e) => e.event_type === 'RETURNED');
+  const isRejectedByFinance = rejectionEvent?.actor_role === 'FINANCE';
+  const isReturnedByFinance = returnEvent?.actor_role === 'FINANCE';
+
+  const isApproved = approval.state === 'APPROVED';
+  const isRejected = approval.state === 'REJECTED';
+  const isReturned = approval.state === 'RETURNED';
+  const isPendingFinance = approval.state === 'PENDING_FINANCE';
+  const isPendingManager = approval.state === 'PENDING_MANAGER';
+
+  // Strict role-stage permission enforcement:
+  // - Sales Manager can ONLY approve Stage 1 (PENDING_MANAGER).
+  // - Finance can ONLY approve Stage 2 (PENDING_FINANCE).
+  // - System Admin has executive override for either stage.
+  // - Resolved/Confirmed deals cannot be decided further.
+  const canUserActOnCurrentStage = () => {
+    if (isApproved || isRejected || isReturned || deal.status === 'CONFIRMED' || deal.status === 'CANCELLED') {
+      return false;
+    }
+    if (user?.role === 'ADMIN') return true;
+    if (isPendingManager) {
+      return user?.role === 'SALES_MANAGER';
+    }
+    if (isPendingFinance) {
+      return user?.role === 'FINANCE' || user?.role === 'FINANCE_DIRECTOR';
+    }
+    return false;
+  };
+
   const handleOpenDecision = (type: 'APPROVE' | 'REJECT' | 'RETURN' | 'ESCALATE') => {
     setToastError(null);
     setToastMessage(null);
@@ -122,26 +154,31 @@ export const ApprovalDetailPage: React.FC = () => {
     }
   };
 
+  // Compute stepper status with dedicated 'rejected' and 'returned' symbols
+  const managerStepStatus = isApproved || isPendingFinance || isRejectedByFinance || isReturnedByFinance
+    ? ('done' as const)
+    : isRejected
+    ? ('rejected' as const)
+    : isReturned
+    ? ('returned' as const)
+    : isPendingManager
+    ? ('current' as const)
+    : ('pending' as const);
+
+  const financeStepStatus = isApproved
+    ? ('done' as const)
+    : isRejected && isRejectedByFinance
+    ? ('rejected' as const)
+    : isReturned && isReturnedByFinance
+    ? ('returned' as const)
+    : isPendingFinance
+    ? ('current' as const)
+    : ('pending' as const);
+
   const stepperSteps = [
     { label: 'Submitted', status: 'done' as const },
-    {
-      label: 'Sales Manager',
-      status:
-        approval.state === 'APPROVED' || approval.state === 'PENDING_FINANCE'
-          ? ('done' as const)
-          : approval.state === 'PENDING_MANAGER'
-          ? ('current' as const)
-          : ('pending' as const),
-    },
-    {
-      label: 'Finance',
-      status:
-        approval.state === 'APPROVED'
-          ? ('done' as const)
-          : approval.state === 'PENDING_FINANCE'
-          ? ('current' as const)
-          : ('pending' as const),
-    },
+    { label: 'Sales Manager', status: managerStepStatus },
+    { label: 'Finance', status: financeStepStatus },
     { label: 'Confirmed', status: deal.status === 'CONFIRMED' ? ('done' as const) : ('pending' as const) },
   ];
 
@@ -180,6 +217,24 @@ export const ApprovalDetailPage: React.FC = () => {
             <h1 className="text-xl font-bold tracking-tight text-text-primary">
               Approval Detail: {deal.reference} ({customer.name})
             </h1>
+            {isRejected && (
+              <span className="px-2.5 py-0.5 rounded-chip text-xs font-bold bg-red-100 text-red-700 border border-red-300 inline-flex items-center gap-1 shadow-xs">
+                <XCircle className="h-3.5 w-3.5 text-red-600" />
+                REJECTED
+              </span>
+            )}
+            {isReturned && (
+              <span className="px-2.5 py-0.5 rounded-chip text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 inline-flex items-center gap-1 shadow-xs">
+                <RotateCcw className="h-3.5 w-3.5 text-amber-700" />
+                RETURNED
+              </span>
+            )}
+            {isApproved && (
+              <span className="px-2.5 py-0.5 rounded-chip text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 shadow-xs">
+                <CheckCircle className="h-3.5 w-3.5 text-emerald-700" />
+                APPROVED
+              </span>
+            )}
             <span className="px-2.5 py-0.5 rounded-chip text-xs font-bold bg-danger/20 text-danger border border-danger/40">
               Blended Risk: {risk.severity}
             </span>
@@ -189,12 +244,12 @@ export const ApprovalDetailPage: React.FC = () => {
             <RiskBadge score={risk.score} severity={risk.severity} />
           </div>
           <p className="text-xs text-text-secondary mt-1">
-            Order Total: <strong>{deal.amount_total ?? quote.totals.total} {deal.currency_code}</strong> · Stage: <strong>{approval.state}</strong>
+            Order Total: <strong>{deal.amount_total ?? quote.totals.total} {deal.currency_code}</strong> · Stage: <strong className={isRejected ? 'text-danger' : isApproved ? 'text-success' : 'text-text-primary'}>{approval.state}</strong>
           </p>
         </div>
 
-        {/* Action Buttons */}
-        {approval.can_decide && (
+        {/* Action Buttons - Rendered strictly when active user is authorized for current approval stage */}
+        {canUserActOnCurrentStage() && (
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -234,6 +289,71 @@ export const ApprovalDetailPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Role State & Guidance Banners */}
+      {isRejected && (
+        <div className="p-4 rounded-card bg-red-50 border border-red-200 flex items-start gap-3 text-red-900 shadow-xs">
+          <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="text-sm font-bold text-red-900">Quotation Rejected by Governance</h4>
+            <p className="text-xs text-red-700 mt-0.5">
+              This quotation has been rejected. Transactions are locked in Odoo and terms cannot be sent to customer.
+            </p>
+            {rejectionEvent?.reason && (
+              <p className="text-xs mt-1.5 font-medium text-slate-800 bg-white/80 px-2.5 py-1 rounded border border-red-200">
+                Rejection Reason: {rejectionEvent.reason}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isReturned && (
+        <div className="p-4 rounded-card bg-amber-50 border border-amber-200 flex items-start gap-3 text-amber-900 shadow-xs">
+          <RotateCcw className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="text-sm font-bold text-amber-900">Quotation Returned for Revision</h4>
+            <p className="text-xs text-amber-800 mt-0.5">
+              Returned to sales representative for price and margin restructuring.
+            </p>
+            {returnEvent?.reason && (
+              <p className="text-xs mt-1.5 font-medium text-slate-800 bg-white/80 px-2.5 py-1 rounded border border-amber-200">
+                Revision Note: {returnEvent.reason}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isPendingFinance && user?.role === 'SALES_MANAGER' && (
+        <div className="p-3.5 rounded-card bg-slate-50 border border-slate-200 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-6 w-6 rounded-full bg-emerald-100 text-emerald-700 items-center justify-center font-bold text-xs">✓</span>
+            <div>
+              <p className="text-xs font-bold text-slate-800">Stage 1 Approved by Sales Manager</p>
+              <p className="text-[11px] text-slate-500">Currently awaiting Stage 2 sign-off from the Finance Department. Only Finance can approve this stage.</p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+            Pending Finance Sign-off
+          </span>
+        </div>
+      )}
+
+      {isPendingManager && (user?.role === 'FINANCE' || user?.role === 'FINANCE_DIRECTOR') && (
+        <div className="p-3.5 rounded-card bg-slate-50 border border-slate-200 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-6 w-6 rounded-full bg-amber-100 text-amber-700 items-center justify-center font-bold text-xs">⏳</span>
+            <div>
+              <p className="text-xs font-bold text-slate-800">Stage 1 Pending: Awaiting Sales Manager</p>
+              <p className="text-[11px] text-slate-500">Finance approval will unlock after the Sales Manager conducts stage 1 review.</p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">
+            Awaiting Manager
+          </span>
+        </div>
+      )}
 
       {/* Stepper */}
       <Card className="border-border bg-surface p-4">
