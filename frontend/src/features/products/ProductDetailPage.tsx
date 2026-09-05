@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -8,8 +8,7 @@ import { HintStrip } from '@/components/data/HintStrip';
 import { productsApi } from '@/api/endpoints/products';
 import { queryKeys } from '@/api/queryKeys';
 import { formatMoney } from '@/lib/format';
-import { ODOO_URL } from '@/lib/constants';
-import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 export const ProductDetailPage: React.FC = () => {
   const { id = '101' } = useParams();
@@ -45,17 +44,6 @@ export const ProductDetailPage: React.FC = () => {
       <PageHeader
         title={`Product Details: ${product.name}`}
         subtitle="Catalog specifications, multi-warehouse stock levels, and discount policy guardrails"
-        actions={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => window.open(`${ODOO_URL}/web#model=product.template&id=${id}`, '_blank')}
-            className="gap-1.5 text-xs"
-          >
-            <span>Edit in Odoo</span>
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Button>
-        }
       />
 
       {/* Panel 1: General Info in Two Columns */}

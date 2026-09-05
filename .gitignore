@@ -46,3 +46,4 @@ pgsql/
 pg_data/
 *.zip
 *.bin
+*.pdf

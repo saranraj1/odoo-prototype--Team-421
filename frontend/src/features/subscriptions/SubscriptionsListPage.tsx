@@ -4,11 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, ColumnDef } from '@/components/data/DataTable';
 import { HintStrip } from '@/components/data/HintStrip';
-import { Button } from '@/components/ui/button';
 import { billingApi } from '@/api/endpoints/billing';
 import { queryKeys } from '@/api/queryKeys';
-import { ODOO_URL } from '@/lib/constants';
-import { ExternalLink } from 'lucide-react';
 
 export const SubscriptionsListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -91,17 +88,6 @@ export const SubscriptionsListPage: React.FC = () => {
       <PageHeader
         title="Subscriptions (List)"
         subtitle="Manage recurring contract lifecycles, billing schedules, and proration terms"
-        actions={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => window.open(`${ODOO_URL}/web#model=sale.order`, '_blank')}
-            className="gap-1.5 text-xs"
-          >
-            <span>+ New Plan (Admin)</span>
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Button>
-        }
       />
 
       <div className="flex items-center gap-2">

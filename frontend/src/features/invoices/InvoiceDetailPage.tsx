@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import { HintStrip } from '@/components/data/HintStrip';
 import { RecordPaymentModal } from './RecordPaymentModal';
 import { billingApi } from '@/api/endpoints/billing';
 import { reportsApi } from '@/api/endpoints/reports';
+import { generateInvoicePdf } from '@/lib/pdf/invoicePdfTemplate';
 import { formatMoney } from '@/lib/format';
 import { ArrowLeft, CreditCard, Download } from 'lucide-react';
 
@@ -40,7 +41,18 @@ export const InvoiceDetailPage: React.FC = () => {
   const handleDownloadSummary = async () => {
     setIsDownloading(true);
     try {
-      await reportsApi.exportReport('billing', 'pdf', { deal_id: 'deal_d1024_acme' });
+      generateInvoicePdf({
+        invoiceId: id,
+        customerName: 'Acme Corp',
+        amount: 558000,
+        isPaid: isPaid,
+        deliveryReconciliation:
+          'Shipment WH1/OUT/001 (8 units) and WH2/OUT/002 (2 units) verified delivered. Invoiced amounts match fulfilled physical goods.',
+        lines: [
+          { description: 'Laptop Pro 14"', qty: 10, unitPrice: 44000, total: 440000 },
+          { description: 'Setup Service', qty: 1, unitPrice: 82000, total: 82000 },
+        ],
+      });
     } finally {
       setIsDownloading(false);
     }

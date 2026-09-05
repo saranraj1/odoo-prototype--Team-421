@@ -5,18 +5,13 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { KpiCard } from '@/components/data/KpiCard';
 import { DataTable, ColumnDef } from '@/components/data/DataTable';
 import { HintStrip } from '@/components/data/HintStrip';
-import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
 import { productsApi } from '@/api/endpoints/products';
 import { queryKeys } from '@/api/queryKeys';
 import { formatMoney } from '@/lib/format';
-import { ODOO_URL } from '@/lib/constants';
-import { ExternalLink } from 'lucide-react';
 
 export const ProductCatalogPage: React.FC = () => {
   const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [odooModalOpen, setOdooModalOpen] = useState(false);
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: queryKeys.products.list({ category: selectedCategory }),
@@ -68,28 +63,6 @@ export const ProductCatalogPage: React.FC = () => {
       <PageHeader
         title="Product Catalog"
         subtitle="Odoo ERP master product catalog with live Deal Guardian discount policies"
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setOdooModalOpen(true)}
-              className="gap-1.5 text-xs"
-            >
-              <span>+ New Product</span>
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setOdooModalOpen(true)}
-              className="gap-1.5 text-xs"
-            >
-              <span>Manage Price Lists</span>
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        }
       />
 
       {/* 3 KPI Cards */}
@@ -138,35 +111,6 @@ export const ProductCatalogPage: React.FC = () => {
       <HintStrip>
         Click a product row to open general info, variants and tier/currency price lists.
       </HintStrip>
-
-      {/* Odoo Redirection Dialog */}
-      <Dialog
-        open={odooModalOpen}
-        onOpenChange={setOdooModalOpen}
-        title="Managed in Odoo ERP"
-        description="Master products, variants, and pricing rules are transactionally owned by Odoo."
-        footer={
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setOdooModalOpen(false)}>
-              Close
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => window.open(`${ODOO_URL}/web#model=product.template`, '_blank')}
-              className="gap-1.5"
-            >
-              <span>Open Odoo Catalog</span>
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        }
-      >
-        <div className="text-xs text-text-secondary py-2">
-          <p>
-            DealFlow360 enforces governance and approval policies over transactions, while Odoo maintains canonical authority over product definitions, inventory stock, and vendor costs.
-          </p>
-        </div>
-      </Dialog>
     </div>
   );
 };
