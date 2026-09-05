@@ -939,6 +939,9 @@ class MockEnvironment:
             self._models[model_name] = MockModel(model_name, self)
         return self._models[model_name]
 
+    def __contains__(self, model_name: Any) -> bool:
+        return model_name in self._models
+
     def get(self, model_name: str, default: Any = None) -> Any:
         return self._models.get(model_name, default)
 

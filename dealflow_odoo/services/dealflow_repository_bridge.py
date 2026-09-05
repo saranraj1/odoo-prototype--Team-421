@@ -186,6 +186,20 @@ class DealFlowRepositoryBridge:
     """Glue class that translates Odoo lifecycle events into PostgreSQL writes."""
 
     def __init__(self) -> None:
+        self._deal_repo = None
+        self._policy_repo = None
+        self._risk_repo = None
+        self._approval_repo = None
+        self._negotiation_repo = None
+        self._fulfillment_repo = None
+        self._health_repo = None
+        self._audit_repo = None
+        self._recommendation_repo = None
+        self._subscription_repo = None
+        self._warehouse_repo = None
+        self._upsell_repo = None
+        self._user_repo = None
+
         self._enabled = _try_load_repositories() and (
             os.getenv("DEALFLOW_DB_ENABLED", "true").lower() not in ("0", "false", "no")
         )
@@ -331,11 +345,12 @@ class DealFlowRepositoryBridge:
             clean_approval = "NONE"
 
         clean_risk = min(100.0, max(0.0, float(risk_score)))
-        return self._safe(
-            "update_deal_status",
-            self._deal_repo.update_status,
-            deal_id, clean_status, clean_approval, clean_risk,
-        )
+        def _write():
+            return self._deal_repo.update_status(
+                deal_id, clean_status, clean_approval, clean_risk,
+            )
+
+        return self._safe("update_deal_status", _write)
 
     # -----------------------------------------------------------------------
     # 2. Risk Assessment

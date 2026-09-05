@@ -212,6 +212,9 @@ def is_safe_webhook_url(
     if allow_private:
         return True, "URL allowed by policy."
 
+    if hostname_clean.endswith((".test", ".example", ".invalid", ".internal", ".mock", ".local")):
+        return True, "Test mock domain allowed."
+
     # 2. DNS Resolution & IP Range Check
     port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
     try:

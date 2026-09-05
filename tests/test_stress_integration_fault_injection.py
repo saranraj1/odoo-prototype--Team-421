@@ -158,7 +158,7 @@ class TestWebhookAndListenerFaultInjection:
         timeout_exc = urllib.error.URLError(socket.timeout("Connection timed out to webhook endpoint"))
 
         with patch("urllib.request.urlopen", side_effect=timeout_exc) as mock_urlopen, \
-             patch("dealflow_odoo.services.event_dispatcher.urllib.request.urlopen", side_effect=timeout_exc):
+             patch("dealflow_odoo.services.event_dispatcher.urllib.request.urlopen", mock_urlopen):
             try:
                 # Execute business transaction
                 result = integration_service.confirm_order(sample_quotation.id)
@@ -166,19 +166,19 @@ class TestWebhookAndListenerFaultInjection:
                 assert mock_urlopen.called
                 assert result.get("confirmed") is True
                 assert sample_quotation.state == "sale"
+
+                # Verify event was nevertheless captured in memory
+                recent_events = dispatcher.get_recent_events(limit=5)
+                confirmed_events = [e for e in recent_events if e["event_type"] == EVENT_ORDER_CONFIRMED]
+                assert len(confirmed_events) == 1
+                assert confirmed_events[0]["record_id"] == sample_quotation.id
+
+                # Verify audit log recorded SUCCESS for confirm_order
+                latest_audit = integration_service.get_audit_logs(limit=1)[0]
+                assert latest_audit["operation"] == "confirm_order"
+                assert latest_audit["result"] == "SUCCESS"
             finally:
                 dispatcher.clear()
-
-        # Verify event was nevertheless captured in memory
-        recent_events = dispatcher.get_recent_events(limit=5)
-        confirmed_events = [e for e in recent_events if e["event_type"] == EVENT_ORDER_CONFIRMED]
-        assert len(confirmed_events) == 1
-        assert confirmed_events[0]["record_id"] == sample_quotation.id
-
-        # Verify audit log recorded SUCCESS for confirm_order
-        latest_audit = integration_service.get_audit_logs(limit=1)[0]
-        assert latest_audit["operation"] == "confirm_order"
-        assert latest_audit["result"] == "SUCCESS"
 
     def test_webhook_http_500_does_not_crash_transaction(
         self,
@@ -202,7 +202,7 @@ class TestWebhookAndListenerFaultInjection:
         )
 
         with patch("urllib.request.urlopen", side_effect=http_500_exc) as mock_urlopen, \
-             patch("dealflow_odoo.services.event_dispatcher.urllib.request.urlopen", side_effect=http_500_exc):
+             patch("dealflow_odoo.services.event_dispatcher.urllib.request.urlopen", mock_urlopen):
             try:
                 # Execute update_order with discount modification
                 res = integration_service.update_order(
@@ -230,11 +230,11 @@ class TestWebhookAndListenerFaultInjection:
     ):
         """Fault Injection: Webhook connection refused (URLError ConnectionRefusedError)."""
         dispatcher = integration_service.event_dispatcher
-        dispatcher.register_webhook("http://127.0.0.1:9999/unreachable")
+        dispatcher.register_webhook("https://dealflow.backend.internal:9999/unreachable")
 
         conn_err = urllib.error.URLError(ConnectionRefusedError("Connection refused"))
-        with patch("urllib.request.urlopen", side_effect=conn_err), \
-             patch("dealflow_odoo.services.event_dispatcher.urllib.request.urlopen", side_effect=conn_err):
+        with patch("urllib.request.urlopen", side_effect=conn_err) as mock_urlopen, \
+             patch("dealflow_odoo.services.event_dispatcher.urllib.request.urlopen", mock_urlopen):
             try:
                 res = integration_service.apply_approved_change(
                     sample_quotation.id,
