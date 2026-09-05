@@ -53,8 +53,8 @@ export const ROLE_NAV_CONFIG: Record<UserRole, NavTab[]> = {
   ],
   CUSTOMER: [
     { label: 'My Quotations', path: '/portal/quotations', allowedRoles: ['CUSTOMER'] },
+    { label: 'Order History & Account', path: '/portal/profile', allowedRoles: ['CUSTOMER'] },
     { label: 'Messages & Activity', path: '/portal/messages', allowedRoles: ['CUSTOMER'] },
-    { label: 'Account Profile', path: '/portal/profile', allowedRoles: ['CUSTOMER'] },
   ],
 };
 
@@ -73,8 +73,8 @@ export const INTERNAL_NAV_TABS: NavTab[] = [
 
 export const PORTAL_NAV_TABS: NavTab[] = [
   { label: 'My Quotations', path: '/portal/quotations', allowedRoles: ['CUSTOMER'] },
+  { label: 'Order History & Account', path: '/portal/profile', allowedRoles: ['CUSTOMER'] },
   { label: 'Messages & Activity', path: '/portal/messages', allowedRoles: ['CUSTOMER'] },
-  { label: 'Account Profile', path: '/portal/profile', allowedRoles: ['CUSTOMER'] },
 ];
 
 export function getTabsForRole(role: UserRole | undefined): NavTab[] {

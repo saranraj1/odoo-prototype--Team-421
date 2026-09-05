@@ -14,7 +14,10 @@ import { NextBestActionBar } from '@/components/data/NextBestActionBar';
 import { StatusChip } from '@/components/data/StatusChip';
 import { Timeline } from '@/components/data/Timeline';
 import { Button } from '@/components/ui/button';
-import { Check, Send, CheckCircle2, XCircle, ArrowLeft, RefreshCw, MessageSquare, Truck, CreditCard, History } from 'lucide-react';
+import { Check, Send, CheckCircle2, XCircle, ArrowLeft, RefreshCw, MessageSquare, Truck, CreditCard, History, Building2 } from 'lucide-react';
+import { Dialog } from '@/components/ui/dialog';
+import { formatMoney, formatAbsoluteDate } from '@/lib/format';
+import { ACME_HISTORICAL_ORDERS, ACME_CUSTOMER_PROFILE } from '@/features/portal/data/customerHistory';
 import type { NextBestAction } from '@/api/types';
 
 export const QuotationWorkspacePage: React.FC = () => {
@@ -25,6 +28,7 @@ export const QuotationWorkspacePage: React.FC = () => {
   const [highlightedLineId, setHighlightedLineId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'negotiation' | 'fulfillment' | 'billing' | 'timeline'>('negotiation');
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [customerHistoryOpen, setCustomerHistoryOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(true);
 
   const { data: workspace, isLoading } = useQuery({
@@ -166,8 +170,20 @@ export const QuotationWorkspacePage: React.FC = () => {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-4 text-xs text-text-secondary mt-1.5">
-            <span>Customer: <strong className="text-text-primary">{customer.name}</strong></span>
+          <div className="flex items-center gap-4 text-xs text-text-secondary mt-1.5 flex-wrap">
+            <span className="flex items-center gap-1.5">
+              <span>Customer:</span>
+              <strong className="text-text-primary">{customer.name}</strong>
+              <button
+                type="button"
+                onClick={() => setCustomerHistoryOpen(true)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors ml-1 cursor-pointer"
+                title="Click to view full purchase history over time"
+              >
+                <History className="h-3 w-3" />
+                <span>4 Past Orders · ₹24.8L Spend</span>
+              </button>
+            </span>
             <span>Price List: <strong className="text-text-primary">Default B2B ({deal.currency_code})</strong></span>
             <span>Payment Terms: <strong className="text-text-primary">{customer.payment_term_days} Days</strong></span>
           </div>
@@ -451,6 +467,70 @@ export const QuotationWorkspacePage: React.FC = () => {
         onConfirmCancel={(reason) => cancelMutation.mutate(reason)}
         isLoading={cancelMutation.isPending}
       />
+
+      {/* Customer Historical Orders Dialog */}
+      <Dialog
+        open={customerHistoryOpen}
+        onOpenChange={setCustomerHistoryOpen}
+        title={`Customer Order History: ${customer.name}`}
+        description={`Commercial relationship summary: ${ACME_CUSTOMER_PROFILE.relationshipAge} · Lifetime Spend: ${formatMoney(ACME_CUSTOMER_PROFILE.lifetimeSpend, deal.currency_code, 0)}`}
+        footer={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setCustomerHistoryOpen(false)}
+          >
+            Close History
+          </Button>
+        }
+      >
+        <div className="space-y-4 text-xs">
+          <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-border">
+            <div>
+              <span className="text-[10px] text-text-muted block uppercase">Customer Tier</span>
+              <span className="font-bold text-emerald-700 dark:text-emerald-400">{customer.tier_code || 'GOLD'} Tier</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-text-muted block uppercase">Total Purchases</span>
+              <span className="font-bold text-text-primary">4 Orders</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-text-muted block uppercase">Avg Transaction</span>
+              <span className="font-bold text-text-primary">{formatMoney(ACME_CUSTOMER_PROFILE.avgOrderValue, deal.currency_code, 0)}</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+              Chronological Order History
+            </h4>
+            <div className="divide-y divide-border/60 rounded-card border border-border overflow-hidden">
+              {ACME_HISTORICAL_ORDERS.map((ord) => (
+                <div key={ord.id} className="p-3 hover:bg-elevated/30 transition-colors flex items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-text-primary">{ord.orderNumber}</span>
+                      <span className="text-[10px] font-mono bg-elevated px-1.5 py-0.2 rounded border border-border text-text-muted">{ord.odooReference}</span>
+                      <span className="text-[11px] text-text-muted">· {formatAbsoluteDate(ord.date)} ({ord.quarter})</span>
+                    </div>
+                    <p className="text-[11px] text-text-secondary">
+                      {ord.items.map(i => `${i.quantity}x ${i.name}`).join(' · ')}
+                    </p>
+                  </div>
+                  <div className="text-right whitespace-nowrap">
+                    <span className="font-bold tabular-nums text-text-primary block">{formatMoney(ord.total, ord.currency)}</span>
+                    <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold uppercase ${
+                      ord.status === 'DELIVERED' ? 'text-emerald-700 bg-emerald-50' : ord.status === 'COMPLETED' ? 'text-slate-700 bg-slate-100' : 'text-amber-700 bg-amber-50'
+                    }`}>
+                      {ord.statusLabel}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 };
