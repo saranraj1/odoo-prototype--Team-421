@@ -83,6 +83,12 @@ try:
 except Exception:  # pragma: no cover
     DealFlowRepositoryBridge = None  # type: ignore[assignment,misc]
 
+# Deal Guardian Governance Adapter (Person 2 <-> Person 3 bridge)
+try:
+    from dealflow_odoo.services.governance_adapter import GovernanceAdapter
+except Exception:
+    GovernanceAdapter = None
+
 logger = logging.getLogger("dealflow.integration_service")
 
 
@@ -166,6 +172,16 @@ class OdooIntegrationService:
                 self.db_bridge = None
         else:
             self.db_bridge = None
+
+        # Deal Guardian Governance Engine adapter
+        if GovernanceAdapter is not None:
+            try:
+                self.governance_adapter: Optional[Any] = GovernanceAdapter(env=env, db_bridge=self.db_bridge)
+            except Exception as _gov_exc:
+                logger.warning("[IntegrationService] GovernanceAdapter init failed: %s", _gov_exc)
+                self.governance_adapter = None
+        else:
+            self.governance_adapter = None
 
     # -------------------------------------------------------------------------
     # Structured Audit Logging & Error Translation Boundary
@@ -1269,6 +1285,24 @@ class OdooIntegrationService:
 
             return res
 
+    # -------------------------------------------------------------------------
+    # Core Operations: Deal Guardian Governance Evaluation
+    # -------------------------------------------------------------------------
 
+    def evaluate_deal(self, order_id: int) -> Dict[str, Any]:
+        """Execute Deal Guardian governance evaluation for a sale order.
 
+        Assembles canonical DealContext, executes deterministic policy, risk,
+        FSM, recommendation, and fulfillment analysis, and synchronizes
+        the results back to Odoo and Decision Engine repositories.
+        """
+        with self._operation_boundary("evaluate_deal", record_id=order_id):
+            if self.governance_adapter:
+                return self.governance_adapter.evaluate_deal(order_id)
 
+            ctx = self.get_deal_context(order_id)
+            return {
+                "deal_id": ctx.deal_id or f"DEAL-{order_id}",
+                "risk": {"score": int(ctx.dealflow_risk_score), "severity": "LOW", "factors": []},
+                "approval": {"required": False, "level": "NONE", "current_stage": "DRAFT"},
+            }

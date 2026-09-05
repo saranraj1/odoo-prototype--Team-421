@@ -21,6 +21,8 @@ import { detectMaterialInvalidation } from '../../engine/invalidationEngine';
 import { validateCustomerTierDiscount } from '../../engine/policyEngine';
 import { AuthService } from '../../security/authService';
 import { RBAC } from '../../security/rbac';
+import { DealFlowApiClient } from '../../services/apiClient';
+
 
 interface DealFlowContextValue {
   deals: DealContext[];
@@ -537,6 +539,12 @@ export const DealFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     persistDeals(updatedDeals);
 
+    // Asynchronously synchronize negotiation to live Odoo/FastAPI backend if reachable
+    const numericOrderId = parseInt(targetDeal.odooOrderId.replace(/\D/g, '') || '84', 10);
+    DealFlowApiClient.submitCustomerNegotiation(numericOrderId, proposedDiscount, comments).catch((syncErr) => {
+      console.info('[DealFlow] Live Odoo negotiation background notice (local simulation active):', syncErr.message);
+    });
+
     addAuditEntry({
       dealId,
       actor: targetDeal.customerName,
@@ -561,6 +569,7 @@ export const DealFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const confirmOrderInOdoo = (dealId: string) => {
+    const targetDeal = deals.find((d) => d.id === dealId);
     const updatedDeals = deals.map((d) => {
       if (d.id !== dealId) return d;
       return {
@@ -573,6 +582,14 @@ export const DealFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     persistDeals(updatedDeals);
 
+    // Asynchronously synchronize confirmation to live Odoo backend if reachable
+    if (targetDeal) {
+      const numericOrderId = parseInt(targetDeal.odooOrderId.replace(/\D/g, '') || '84', 10);
+      DealFlowApiClient.confirmOrder(numericOrderId).catch((syncErr) => {
+        console.info('[DealFlow] Live Odoo confirmation background notice (local simulation active):', syncErr.message);
+      });
+    }
+
     addAuditEntry({
       dealId,
       actor: 'Odoo ERP Integration Gateway',
@@ -583,6 +600,7 @@ export const DealFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       badgeVariant: 'success',
     });
   };
+
 
   /**
    * SALES MANAGER EXCLUSIVE ACTION: CUSTOMER CLASSIFICATION

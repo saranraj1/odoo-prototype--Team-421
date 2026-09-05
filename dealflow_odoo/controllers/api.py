@@ -296,6 +296,27 @@ class DealFlowApiController(http.Controller):
             return self._handle_error(exc, f"order_context({order_id})")
 
     @http.route(
+        "/api/dealflow/order/<int:order_id>/evaluate",
+        type="http",
+        auth="public",
+        methods=["GET", "POST"],
+        cors="*",
+        csrf=False,
+    )
+    def evaluate_order(self, order_id: int, **_kwargs) -> Any:
+        """GET/POST /api/dealflow/order/<int:order_id>/evaluate
+
+        Executes complete Deal Guardian governance evaluation for the quotation.
+        """
+        try:
+            self._authenticate_request()
+            service = self._get_service()
+            result = service.evaluate_deal(order_id)
+            return self._json_response({"success": True, "data": result}, status=200)
+        except Exception as exc:
+            return self._handle_error(exc, f"evaluate_order({order_id})")
+
+    @http.route(
         "/api/dealflow/order/<int:order_id>/apply_approved_change",
         type="http",
         auth="public",

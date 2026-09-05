@@ -91,6 +91,23 @@ def test_order_context_get_and_post(api_test_env, monkeypatch):
     assert "lines" in resp.json["data"]
 
 
+def test_order_evaluate_endpoint(api_test_env, monkeypatch):
+    env, service, quotation = api_test_env
+    ctrl = DealFlowApiController()
+
+    req = MockApiReq(
+        headers={"Authorization": "Bearer test_secret_123"},
+        env=env,
+    )
+    monkeypatch.setattr(api_module, "request", req)
+    resp = ctrl.evaluate_order(quotation.id)
+    assert resp.status_code == 200
+    assert resp.json["success"] is True
+    assert "deal_id" in resp.json["data"]
+    assert "risk" in resp.json["data"]
+    assert "approval" in resp.json["data"]
+
+
 def test_apply_fulfillment_plan_with_dict_payload(api_test_env, monkeypatch):
     env, service, quotation = api_test_env
     ctrl = DealFlowApiController()

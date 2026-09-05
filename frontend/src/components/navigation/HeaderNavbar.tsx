@@ -16,6 +16,7 @@ import {
   Lock
 } from 'lucide-react';
 import { Badge, Button } from '../ui';
+import { DealFlowApiClient } from '../../services/apiClient';
 
 interface HeaderNavbarProps {
   currentTab: string;
@@ -26,6 +27,20 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({ currentTab, setCurre
   const { activeRole, roleTitle, isCustomer, currentUser, logout, isSalesRep, isSalesManager, isFinanceDirector, isAdmin } = useRole();
   const { activeDeal, resetDemoToGoldenPath, evaluation } = useDealFlow();
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [gatewayStatus, setGatewayStatus] = useState<'CHECKING' | 'LIVE' | 'STANDALONE'>('CHECKING');
+
+  React.useEffect(() => {
+    let isMounted = true;
+    DealFlowApiClient.checkHealth()
+      .then((res) => {
+        if (isMounted) setGatewayStatus(res.gateway ? 'LIVE' : 'STANDALONE');
+      })
+      .catch(() => {
+        if (isMounted) setGatewayStatus('STANDALONE');
+      });
+    return () => { isMounted = false; };
+  }, []);
+
 
   // Navigation tabs strictly role-gated based on authenticated session
   const navTabs = React.useMemo(() => {
@@ -88,10 +103,18 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({ currentTab, setCurre
           </div>
           <span className="hidden sm:inline-block text-slate-500">·</span>
           <div className="hidden sm:flex items-center gap-1.5 text-slate-300 font-mono text-[11px]">
+            <span>GATEWAY:</span>
+            <span className={gatewayStatus === 'LIVE' ? "text-emerald-400 font-medium" : "text-brand-300 font-medium"}>
+              {gatewayStatus === 'LIVE' ? 'LIVE (FastAPI v1.0.0)' : 'STANDALONE (Deterministic Engine)'}
+            </span>
+          </div>
+          <span className="hidden sm:inline-block text-slate-500">·</span>
+          <div className="hidden sm:flex items-center gap-1.5 text-slate-300 font-mono text-[11px]">
             <span>ODOO RPC:</span>
             <span className="text-emerald-400 font-medium">CONNECTED (sale.order #SO-2026-084)</span>
           </div>
         </div>
+
 
         <div className="flex items-center gap-3">
           {/* Active Deal Status Quick Pill (Enterprise only) */}
