@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Union
 from unittest.mock import MagicMock
 
-# Default to disabled DB bridge for fast in-memory test harness unless explicitly enabled
-os.environ.setdefault("DEALFLOW_DB_ENABLED", "false")
+# Default to disabled DB bridge for fast in-memory test harness
+os.environ["DEALFLOW_DB_ENABLED"] = "false"
 
 import pytest
 
