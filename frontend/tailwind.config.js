@@ -1,32 +1,59 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: ['class'],
   content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}',
   ],
-  darkMode: 'class',
   theme: {
     extend: {
-      fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
-      },
       colors: {
-        brand: {
-          50: '#f0f7ff',
-          100: '#e0effe',
-          200: '#bae0fd',
-          300: '#7cc7fb',
-          400: '#36abf7',
-          500: '#0c8ee9',
-          600: '#0270c7',
-          700: '#0359a1',
-          800: '#074c84',
-          900: '#0c406e',
-          950: '#082849',
+        app: 'var(--bg-app)',
+        surface: 'var(--bg-surface)',
+        elevated: 'var(--bg-elevated)',
+        border: {
+          DEFAULT: 'var(--border)',
+          strong: 'var(--border-strong)',
         },
+        text: {
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          muted: 'var(--text-muted)',
+        },
+        brand: {
+          DEFAULT: 'var(--brand)',
+          ink: 'var(--brand-ink)',
+          50: '#f0f9ff',
+          100: '#e0f2fe',
+          200: '#bae6fd',
+          300: '#7dd3fc',
+          400: '#38bdf8',
+          500: '#0ea5e9',
+          600: '#0284c7',
+          700: '#0369a1',
+          800: '#075985',
+          900: '#0c4a6e',
+          950: '#082f49',
+        },
+        success: 'var(--success)',
+        warning: 'var(--warning)',
+        danger: 'var(--danger)',
+        info: 'var(--info)',
+        note: {
+          bg: 'var(--note-bg)',
+          border: 'var(--note-border)',
+          text: 'var(--note-text)',
+        },
+      },
+      borderRadius: {
+        card: '10px',
+        input: '8px',
+        chip: '999px',
+      },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
       },
     },
   },
   plugins: [],
-}
+};
