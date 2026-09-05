@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import uuid
 from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Optional
 
 from dealflow_odoo.schemas import (
+    AuthenticationError,
     AuthorizationError,
     DealFlowIntegrationError,
     InvalidStateError,
@@ -19,6 +22,7 @@ from dealflow_odoo.schemas import (
     OdooExecutionError,
     ValidationError,
 )
+from dealflow_odoo.security.security_utils import verify_api_key
 from dealflow_odoo.services.integration_service import OdooIntegrationService
 
 # Optional Odoo imports with test stubs
@@ -48,11 +52,109 @@ class DealFlowApiController(http.Controller):
     """REST/JSON endpoints exposing Odoo Integration Service to DealFlow backend."""
 
     _service_override: Optional[OdooIntegrationService] = None
+    _api_key_override: Optional[str] = None
+    _enforce_auth_in_test: bool = False
 
     @classmethod
     def set_service_override(cls, service: Optional[OdooIntegrationService]) -> None:
         """Inject an integration service instance (useful for unit testing)."""
         cls._service_override = service
+
+    @classmethod
+    def set_api_key(cls, key: Optional[str]) -> None:
+        """Configure API key override (useful for testing or runtime configuration)."""
+        cls._api_key_override = key
+
+    @classmethod
+    def set_enforce_auth_in_test(cls, enforce: bool) -> None:
+        """Enable or disable authentication enforcement during test fixture execution."""
+        cls._enforce_auth_in_test = enforce
+
+    def _get_expected_api_key(self) -> str:
+        """Resolve the expected API key from parameter override, Odoo settings, or environment."""
+        if self._api_key_override:
+            return self._api_key_override
+
+        env = getattr(request, "env", None) if request is not None else None
+        if env is not None:
+            try:
+                param_key = env["ir.config_parameter"].sudo().get_param("dealflow.api_key")
+                if param_key:
+                    return str(param_key).strip()
+            except Exception:
+                pass
+
+        return os.environ.get("DEALFLOW_API_KEY", "dealflow_api_secret_key_default")
+
+    def _extract_auth_token(self) -> Optional[str]:
+        """Extract API Key from Bearer Authorization header, X-API-Key header, or payload parameters."""
+        if request is None:
+            return None
+
+        # 1. Check HTTP headers
+        httpreq = getattr(request, "httprequest", None)
+        if httpreq is not None:
+            headers = getattr(httpreq, "headers", None)
+            if headers is not None:
+                auth = headers.get("Authorization") or headers.get("authorization")
+                if auth and auth.startswith("Bearer "):
+                    return auth[7:].strip()
+                x_key = headers.get("X-API-Key") or headers.get("x-api-key")
+                if x_key:
+                    return x_key.strip()
+            environ = getattr(httpreq, "environ", {}) or {}
+            auth_env = environ.get("HTTP_AUTHORIZATION")
+            if auth_env and auth_env.startswith("Bearer "):
+                return auth_env[7:].strip()
+            x_key_env = environ.get("HTTP_X_API_KEY")
+            if x_key_env:
+                return x_key_env.strip()
+
+        # 2. Check query or request params
+        params = getattr(request, "params", {}) or {}
+        if isinstance(params, dict):
+            key = params.get("api_key") or params.get("auth_token")
+            if key and isinstance(key, str):
+                return key.strip()
+
+        # 3. Check JSON payload
+        payload = self._parse_json_payload()
+        if isinstance(payload, dict):
+            key = payload.get("api_key") or payload.get("auth_token")
+            if key and isinstance(key, str):
+                return key.strip()
+
+        return None
+
+    def _authenticate_request(self) -> None:
+        """Enforces authentication via API Key, Bearer Token, or active non-public Odoo session.
+
+        Raises:
+            AuthenticationError: If caller lacks valid authentication credentials.
+        """
+        if self._service_override is not None and not self._enforce_auth_in_test:
+            return
+
+        # 1. Check for active internal/admin Odoo session
+        env = getattr(request, "env", None) if request is not None else None
+        user = getattr(env, "user", None) if env is not None else None
+        if user and getattr(user, "id", None):
+            is_public = getattr(user, "_is_public", lambda: False)()
+            if not is_public and (user.has_group("base.group_user") or user.has_group("dealflow_odoo.group_dealflow_admin")):
+                return
+
+        # 2. Check API Key
+        provided_key = self._extract_auth_token()
+        expected_key = self._get_expected_api_key()
+
+        if provided_key and verify_api_key(provided_key, expected_key):
+            return
+
+        logger.warning("Unauthenticated API request rejected: missing or invalid credentials")
+        raise AuthenticationError(
+            "Authentication required: missing or invalid API key / bearer token.",
+            details={"code": "AUTHENTICATION_REQUIRED"},
+        )
 
     def _get_service(self) -> OdooIntegrationService:
         """Retrieve active OdooIntegrationService bound to current Odoo request env."""
@@ -112,6 +214,8 @@ class DealFlowApiController(http.Controller):
         """Translate exceptions into structured JSON error responses with proper HTTP status."""
         logger.error("API error at %s: %s", endpoint, exc, exc_info=True)
 
+        if isinstance(exc, AuthenticationError):
+            return self._json_response(exc.to_dict(), status=401)
         if isinstance(exc, ValidationError):
             return self._json_response(exc.to_dict(), status=400)
         if isinstance(exc, AuthorizationError):
@@ -125,14 +229,16 @@ class DealFlowApiController(http.Controller):
         if isinstance(exc, DealFlowIntegrationError):
             return self._json_response(exc.to_dict(), status=400)
 
-        # Generic unexpected error
+        # Generic unexpected error — sanitized to prevent traceback leakage
+        error_ref = uuid.uuid4().hex[:8].upper()
+        logger.exception("Internal error at %s (Ref: %s): %s", endpoint, error_ref, exc)
         return self._json_response(
             {
                 "success": False,
                 "error": {
                     "code": "INTERNAL_SERVER_ERROR",
-                    "message": str(exc),
-                    "details": {"endpoint": endpoint},
+                    "message": f"An unexpected internal server error occurred (Ref: {error_ref}).",
+                    "details": {"endpoint": endpoint, "error_ref": error_ref},
                 },
             },
             status=500,
@@ -155,6 +261,7 @@ class DealFlowApiController(http.Controller):
         Retrieves complete DealContextDTO for the given order.
         """
         try:
+            self._authenticate_request()
             service = self._get_service()
             context_dto = service.get_deal_context(order_id)
             data = asdict(context_dto) if is_dataclass(context_dto) else context_dto
@@ -175,6 +282,7 @@ class DealFlowApiController(http.Controller):
         Applies approved changes (discounts, lines, terms) atomically to an order.
         """
         try:
+            self._authenticate_request()
             payload = self._parse_json_payload()
             changes = payload.get("changes", payload)
             service = self._get_service()
@@ -196,6 +304,7 @@ class DealFlowApiController(http.Controller):
         Confirms an approved quotation into a sales order.
         """
         try:
+            self._authenticate_request()
             payload = self._parse_json_payload()
             approval_token = payload.get("approval_token")
             service = self._get_service()
@@ -217,6 +326,7 @@ class DealFlowApiController(http.Controller):
         Applies warehouse inventory allocation split to the order and delivery orders.
         """
         try:
+            self._authenticate_request()
             payload = self._parse_json_payload()
             plan = payload.get("plan", payload)
             service = self._get_service()
@@ -238,6 +348,7 @@ class DealFlowApiController(http.Controller):
         Generates customer invoice for a confirmed order.
         """
         try:
+            self._authenticate_request()
             service = self._get_service()
             result = service.create_invoice(order_id)
             return self._json_response({"success": True, "data": result}, status=200)

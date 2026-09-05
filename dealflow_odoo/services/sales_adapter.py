@@ -24,6 +24,7 @@ from dealflow_odoo.schemas import (
     OdooUserError,
     OdooValidationError,
 )
+from dealflow_odoo.security.security_utils import verify_approval_token
 UserError = OdooUserError
 
 
@@ -47,6 +48,7 @@ try:
     from ..constants import (
         APPROVAL_STATE_APPROVED,
         APPROVAL_STATE_PENDING,
+        APPROVAL_STATE_REJECTED,
         CATEGORY_DISCOUNT_CEILINGS,
         DEFAULT_FINANCE_DISCOUNT_THRESHOLD,
         DEFAULT_MAX_MGR_DISCOUNT,
@@ -70,6 +72,7 @@ except (ImportError, ValueError):
     from dealflow_odoo.constants import (
         APPROVAL_STATE_APPROVED,
         APPROVAL_STATE_PENDING,
+        APPROVAL_STATE_REJECTED,
         CATEGORY_DISCOUNT_CEILINGS,
         DEFAULT_FINANCE_DISCOUNT_THRESHOLD,
         DEFAULT_MAX_MGR_DISCOUNT,
@@ -679,9 +682,24 @@ class SalesAdapter:
                 )
 
             if approval_token:
+                if not verify_approval_token(approval_token, order_id):
+                    raise AuthorizationError(
+                        f"Cryptographic verification failed: Invalid, expired, or forged approval token for order {order_id}.",
+                        {"order_id": order_id, "token_invalid": True},
+                    )
                 bypass_check = True
 
             if not bypass_check:
+                # Reject confirmation if order is explicitly in rejected state
+                if order.dealflow_approval_state == APPROVAL_STATE_REJECTED:
+                    raise AuthorizationError(
+                        f"Order {order.name or order_id} has been formally rejected by DealFlow governance and cannot be confirmed.",
+                        {
+                            "order_id": order_id,
+                            "dealflow_approval_state": APPROVAL_STATE_REJECTED,
+                        },
+                    )
+
                 # Pre-check DealFlow lock and approval state
                 if order.dealflow_locked and order.dealflow_approval_state != APPROVAL_STATE_APPROVED:
                     raise AuthorizationError(

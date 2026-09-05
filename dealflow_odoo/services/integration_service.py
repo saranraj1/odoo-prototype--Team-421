@@ -45,6 +45,7 @@ from dealflow_odoo.schemas import (
     ValidationError,
 )
 from dealflow_odoo.services.event_dispatcher import EventDispatcher, get_event_dispatcher
+from dealflow_odoo.security.security_utils import verify_approval_token
 
 from dealflow_odoo.schemas import (
     OdooAccessDenied,
@@ -757,15 +758,23 @@ class OdooIntegrationService:
                 is_locked = bool(getattr(order, "dealflow_locked", False))
                 app_state = getattr(order, "dealflow_approval_state", APPROVAL_STATE_DRAFT)
 
-                if is_locked and not approval_token:
+                token_valid = False
+                if approval_token:
+                    token_valid = verify_approval_token(approval_token, order_id)
+                    if not token_valid:
+                        raise AuthorizationError(
+                            f"Cryptographic verification failed: Invalid, expired, or forged approval token for order {order_id}."
+                        )
+
+                if is_locked and not token_valid:
                     raise AuthorizationError(
-                        f"Order {order_id} is locked and requires DealFlow approval before confirmation"
+                        f"Order {order_id} is locked and requires a valid DealFlow approval token before confirmation"
                     )
 
                 if app_state in (APPROVAL_STATE_PENDING, APPROVAL_STATE_REJECTED, APPROVAL_STATE_REAPPROVAL_REQUIRED):
-                    if not approval_token:
+                    if not token_valid:
                         raise AuthorizationError(
-                            f"Cannot confirm order {order_id} in approval state '{app_state}' without approval token"
+                            f"Cannot confirm order {order_id} in approval state '{app_state}' without a valid DealFlow approval token"
                         )
 
                 if hasattr(order, "action_dealflow_confirm"):

@@ -31,6 +31,7 @@ from dealflow_odoo.constants import (
     EVENT_STOCK_CHANGED,
 )
 from dealflow_odoo.schemas import EventPayloadDTO
+from dealflow_odoo.security.security_utils import is_safe_webhook_url, generate_webhook_signature
 
 logger = logging.getLogger("dealflow.event_dispatcher")
 
@@ -102,11 +103,16 @@ class EventDispatcher:
             return False
 
     def register_webhook(self, url: str) -> None:
-        """Register a webhook endpoint URL.
+        """Register a webhook endpoint URL with SSRF validation.
 
         Args:
-            url: Destination URL for event payloads (e.g. POST /internal/events/odoo).
+            url: Destination URL for event payloads (e.g. POST /events/odoo).
         """
+        is_safe, reason = is_safe_webhook_url(url, allow_private=False)
+        if not is_safe:
+            logger.warning("SSRF Protection blocked registration of webhook URL '%s': %s", url, reason)
+            raise ValueError(f"SSRF Protection blocked webhook URL '{url}': {reason}")
+
         with self._lock:
             if url not in self._webhook_urls:
                 self._webhook_urls.append(url)
@@ -214,9 +220,17 @@ class EventDispatcher:
 
         payload_dict = asdict(payload)
         raw_body = json.dumps(payload_dict, default=str).encode("utf-8")
+        signing_secret = os.environ.get("DEALFLOW_SIGNING_KEY", "dealflow_sec_token_key_2026_production_default")
+        sig_header = generate_webhook_signature(raw_body, signing_secret)
         all_success = True
 
         for url in urls:
+            is_safe, reason = is_safe_webhook_url(url, allow_private=False)
+            if not is_safe:
+                logger.warning("SSRF Protection: Skipping dispatch to unsafe webhook URL %s: %s", url, reason)
+                all_success = False
+                continue
+
             req = urllib.request.Request(
                 url=url,
                 data=raw_body,
@@ -224,6 +238,7 @@ class EventDispatcher:
                     "Content-Type": "application/json",
                     "User-Agent": "DealFlow-Odoo-Integration/1.0",
                     "X-DealFlow-Event": payload.event_type,
+                    "X-DealFlow-Signature": sig_header,
                 },
                 method="POST",
             )

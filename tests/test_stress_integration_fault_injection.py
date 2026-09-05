@@ -39,6 +39,7 @@ from dealflow_odoo.constants import (
 )
 import dealflow_odoo.controllers.api as api_module
 from dealflow_odoo.controllers.api import DealFlowApiController
+from dealflow_odoo.security.security_utils import generate_approval_token
 from dealflow_odoo.schemas import (
     AuthorizationError,
     CustomerDTO,
@@ -382,7 +383,8 @@ class TestAuditTrailCompletenessAndTamperResistance:
         assert isinstance(wh_stock, list)
 
         # 9. confirm_order
-        conf = integration_service.confirm_order(sample_quotation.id, approval_token="TOKEN-RAPID-09")
+        valid_token = generate_approval_token(sample_quotation.id)
+        conf = integration_service.confirm_order(sample_quotation.id, approval_token=valid_token)
         assert conf.get("confirmed") is True
 
         # 10. create_invoice

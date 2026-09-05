@@ -312,6 +312,53 @@ class DealFlowNegotiation(models.Model):
         return records
 
     # -------------------------------------------------------------------------
+    # ORM METHOD OVERRIDES
+    # -------------------------------------------------------------------------
+
+    def write(self, vals: Dict[str, Any]) -> bool:
+        """Governance hook enforcing immutability and role-based privilege checks on negotiations."""
+        user = getattr(self.env, "user", None)
+        if user:
+            is_portal = (
+                user.has_group('base.group_portal')
+                or user.has_group('dealflow_odoo.group_dealflow_portal')
+                or not user.has_group('base.group_user')
+            )
+            is_finance_or_admin = (
+                user.has_group('dealflow_odoo.group_dealflow_finance')
+                or user.has_group('dealflow_odoo.group_dealflow_admin')
+            )
+            is_manager = (
+                user.has_group('dealflow_odoo.group_dealflow_sales_manager')
+                or is_finance_or_admin
+            )
+
+            # 1. Block unauthorized status transitions via RPC write
+            if "status" in vals:
+                target_status = vals["status"]
+                if is_portal:
+                    raise AccessError(_("Privilege Escalation Blocked: Portal users cannot modify negotiation status."))
+
+                if target_status == NEGOTIATION_STATUS_APPROVED:
+                    if not is_manager:
+                        raise AccessError(_("Privilege Escalation Blocked: Sales Reps cannot directly approve negotiations."))
+                    for rec in self:
+                        if rec.requested_discount > DEFAULT_FINANCE_DISCOUNT_THRESHOLD and not is_finance_or_admin:
+                            raise AccessError(
+                                _("Privilege Escalation Blocked: Approval for discount exceeding %s%% requires Finance approval.")
+                                % DEFAULT_FINANCE_DISCOUNT_THRESHOLD
+                            )
+
+            # 2. Enforce immutability of financial terms once reviewed or approved
+            immutable_fields = {"requested_discount", "original_amount", "proposed_amount", "sale_order_id"}
+            if any(f in vals for f in immutable_fields):
+                for rec in self:
+                    if rec.status in (NEGOTIATION_STATUS_APPROVED, NEGOTIATION_STATUS_REJECTED):
+                        raise ValidationError(_("Integrity Violation: Cannot modify financial terms of an approved or rejected negotiation."))
+
+        return super().write(vals)
+
+    # -------------------------------------------------------------------------
     # WORKFLOW ACTIONS
     # -------------------------------------------------------------------------
 
@@ -377,10 +424,10 @@ class DealFlowNegotiation(models.Model):
                 vals['review_note'] = review_note
             record.write(vals)
 
-            # Unlock quotation upon rejection
+            # Keep quotation strictly locked upon rejection to prevent unauthorized confirmation
             try:
                 record.sale_order_id.sudo().write({
-                    'dealflow_locked': False,
+                    'dealflow_locked': True,
                     'dealflow_approval_state': 'rejected',
                 })
             except Exception as ex:

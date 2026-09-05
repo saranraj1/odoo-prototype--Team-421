@@ -39,6 +39,11 @@ class AuthorizationError(DealFlowIntegrationError):
         super().__init__("AUTHORIZATION_ERROR", message, details)
 
 
+class AuthenticationError(DealFlowIntegrationError):
+    def __init__(self, message: str = "Authentication required: valid API key or session missing.", details: Optional[Dict[str, Any]] = None):
+        super().__init__("AUTHENTICATION_REQUIRED", message, details)
+
+
 class NotFoundError(DealFlowIntegrationError):
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__("NOT_FOUND", message, details)

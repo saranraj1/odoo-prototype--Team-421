@@ -593,6 +593,9 @@ class SaleOrder(models.Model):
                     for line in order.order_line
                     if not line.display_type
                 )
+                if order.dealflow_approval_state == APPROVAL_STATE_REJECTED:
+                    raise UserError(_("Confirmation Blocked: Quotation has been formally rejected by DealFlow governance."))
+
                 if (order.dealflow_locked or exceeds_threshold or has_category_breach) and order.dealflow_approval_state != APPROVAL_STATE_APPROVED:
                     raise UserError(_("Order locked pending DealFlow approval"))
 

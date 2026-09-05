@@ -146,8 +146,9 @@ class PortalController(http.Controller):
             )
             if is_elevated:
                 return True
-            # Sales Rep: can access assigned orders
-            if order.user_id.id == user.id or not order.user_id:
+            # Sales Rep: strictly limited to orders assigned to them
+            order_user_id = getattr(order.user_id, 'id', None)
+            if order_user_id and order_user_id == user.id:
                 return True
             return False
 
@@ -457,16 +458,20 @@ class PortalController(http.Controller):
         # Sanitize HTML tags to neutralize XSS injection attacks
         requested_terms = html.escape(raw_terms)
         customer_note = html.escape(raw_note)
-        original_amount = float(data.get('original_amount') or order.amount_total)
+        # STRICT SERVER-SIDE ENFORCEMENT: Client-supplied baseline amount is strictly ignored (VULN-07)
+        original_amount = float(order.amount_total)
+        calculated_proposed = round(original_amount * max(0.0, 1.0 - (requested_discount / 100.0)), 2)
 
         proposed_amount = data.get('proposed_amount')
         if proposed_amount is not None:
             try:
                 proposed_amount = float(proposed_amount)
+                if proposed_amount < 0.0 or proposed_amount > original_amount:
+                    proposed_amount = calculated_proposed
             except (ValueError, TypeError):
-                proposed_amount = original_amount * max(0.0, 1.0 - (requested_discount / 100.0))
+                proposed_amount = calculated_proposed
         else:
-            proposed_amount = original_amount * max(0.0, 1.0 - (requested_discount / 100.0))
+            proposed_amount = calculated_proposed
 
         # Create dealflow.negotiation record (Customer NEVER edits sale.order directly)
         try:
