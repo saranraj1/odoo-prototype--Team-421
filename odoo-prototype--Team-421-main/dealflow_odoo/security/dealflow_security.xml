@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- ============================================================ -->
+        <!-- DEALFLOW360 SECURITY CATEGORY                                -->
+        <!-- ============================================================ -->
+        <record id="module_category_dealflow" model="ir.module.category">
+            <field name="name">DealFlow360</field>
+            <field name="description">DealFlow360 Sales Governance, Intelligence and Portal Security</field>
+            <field name="sequence">20</field>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- DEALFLOW360 SECURITY GROUPS                                  -->
+        <!-- ============================================================ -->
+
+        <!-- 1. DealFlow Portal User -->
+        <record id="group_dealflow_portal" model="res.groups">
+            <field name="name">DealFlow Portal User</field>
+            <field name="category_id" ref="module_category_dealflow"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_portal'))]"/>
+            <field name="comment">External customer portal user. Isolated strictly to their own quotations and negotiation requests. CANNOT edit sale orders directly.</field>
+        </record>
+
+        <!-- 2. DealFlow Sales Rep -->
+        <record id="group_dealflow_sales_rep" model="res.groups">
+            <field name="name">DealFlow Sales Rep</field>
+            <field name="category_id" ref="module_category_dealflow"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">Internal sales representative. Can only access their assigned orders and related negotiations.</field>
+        </record>
+
+        <!-- 3. DealFlow Sales Manager -->
+        <record id="group_dealflow_sales_manager" model="res.groups">
+            <field name="name">DealFlow Sales Manager</field>
+            <field name="category_id" ref="module_category_dealflow"/>
+            <field name="implied_ids" eval="[(4, ref('group_dealflow_sales_rep'))]"/>
+            <field name="comment">Sales manager. Can view all orders, approve deals within manager discount thresholds, and review negotiations.</field>
+        </record>
+
+        <!-- 4. DealFlow Finance -->
+        <record id="group_dealflow_finance" model="res.groups">
+            <field name="name">DealFlow Finance</field>
+            <field name="category_id" ref="module_category_dealflow"/>
+            <field name="implied_ids" eval="[(4, ref('group_dealflow_sales_rep'))]"/>
+            <field name="comment">Finance officer. Can view all orders and review/approve high-risk or deep-discount deals.</field>
+        </record>
+
+        <!-- 5. DealFlow Admin -->
+        <record id="group_dealflow_admin" model="res.groups">
+            <field name="name">DealFlow Admin</field>
+            <field name="category_id" ref="module_category_dealflow"/>
+            <field name="implied_ids" eval="[(4, ref('group_dealflow_sales_manager')), (4, ref('group_dealflow_finance'))]"/>
+            <field name="users" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
+            <field name="comment">DealFlow Administrator. Full access to all DealFlow configurations, policies, orders, and negotiations.</field>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- RECORD RULES — ISOLATION & ACCESS CONTROL                    -->
+        <!-- ============================================================ -->
+
+        <!-- A. Customer Isolation Rule on dealflow.negotiation -->
+        <!-- Portal customer can ONLY read and create their own negotiations (partner_id = user.partner_id) -->
+        <record id="dealflow_negotiation_portal_customer_rule" model="ir.rule">
+            <field name="name">DealFlow Negotiation: Portal Customer Isolation</field>
+            <field name="model_id" ref="model_dealflow_negotiation"/>
+            <field name="domain_force">[('partner_id', '=', user.partner_id.id)]</field>
+            <field name="groups" eval="[(4, ref('group_dealflow_portal'))]"/>
+            <field name="perm_read" eval="1"/>
+            <field name="perm_write" eval="0"/>
+            <field name="perm_create" eval="1"/>
+            <field name="perm_unlink" eval="0"/>
+        </record>
+
+        <!-- B. Customer Isolation Rule on sale.order -->
+        <!-- Portal customer can ONLY view their own orders (Read-only, NO direct edits) -->
+        <record id="dealflow_sale_order_portal_customer_rule" model="ir.rule">
+            <field name="name">DealFlow Sale Order: Portal Customer Isolation</field>
+            <field name="model_id" ref="sale.model_sale_order"/>
+            <field name="domain_force">[('partner_id', '=', user.partner_id.id)]</field>
+            <field name="groups" eval="[(4, ref('group_dealflow_portal'))]"/>
+            <field name="perm_read" eval="1"/>
+            <field name="perm_write" eval="0"/>
+            <field name="perm_create" eval="0"/>
+            <field name="perm_unlink" eval="0"/>
+        </record>
+
+        <!-- C. Sales Rep Isolation Rule on sale.order -->
+        <!-- Sales Rep can ONLY access orders assigned to them or unassigned -->
+        <record id="dealflow_sale_order_sales_rep_rule" model="ir.rule">
+            <field name="name">DealFlow Sale Order: Sales Rep Assigned Orders Only</field>
+            <field name="model_id" ref="sale.model_sale_order"/>
+            <field name="domain_force">['|', ('user_id', '=', user.id), ('user_id', '=', False)]</field>
+            <field name="groups" eval="[(4, ref('group_dealflow_sales_rep'))]"/>
+            <field name="perm_read" eval="1"/>
+            <field name="perm_write" eval="1"/>
+            <field name="perm_create" eval="1"/>
+            <field name="perm_unlink" eval="0"/>
+        </record>
+
+        <!-- D. Sales Rep Isolation Rule on dealflow.negotiation -->
+        <!-- Sales Rep can ONLY access negotiations for orders assigned to them -->
+        <record id="dealflow_negotiation_sales_rep_rule" model="ir.rule">
+            <field name="name">DealFlow Negotiation: Sales Rep Assigned Orders Only</field>
+            <field name="model_id" ref="model_dealflow_negotiation"/>
+            <field name="domain_force">['|', ('sale_order_id.user_id', '=', user.id), ('sale_order_id.user_id', '=', False)]</field>
+            <field name="groups" eval="[(4, ref('group_dealflow_sales_rep'))]"/>
+            <field name="perm_read" eval="1"/>
+            <field name="perm_write" eval="1"/>
+            <field name="perm_create" eval="1"/>
+            <field name="perm_unlink" eval="0"/>
+        </record>
+
+        <!-- E. Sales Manager / Finance / Admin Rule on sale.order -->
+        <!-- Managers, Finance, and Admins can access ALL sale orders -->
+        <record id="dealflow_sale_order_manager_all_rule" model="ir.rule">
+            <field name="name">DealFlow Sale Order: Manager/Finance/Admin All Orders</field>
+            <field name="model_id" ref="sale.model_sale_order"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('group_dealflow_sales_manager')), (4, ref('group_dealflow_finance')), (4, ref('group_dealflow_admin'))]"/>
+            <field name="perm_read" eval="1"/>
+            <field name="perm_write" eval="1"/>
+            <field name="perm_create" eval="1"/>
+            <field name="perm_unlink" eval="1"/>
+        </record>
+
+        <!-- F. Sales Manager / Finance / Admin Rule on dealflow.negotiation -->
+        <!-- Managers, Finance, and Admins can access ALL negotiations -->
+        <record id="dealflow_negotiation_manager_all_rule" model="ir.rule">
+            <field name="name">DealFlow Negotiation: Manager/Finance/Admin All Negotiations</field>
+            <field name="model_id" ref="model_dealflow_negotiation"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('group_dealflow_sales_manager')), (4, ref('group_dealflow_finance')), (4, ref('group_dealflow_admin'))]"/>
+            <field name="perm_read" eval="1"/>
+            <field name="perm_write" eval="1"/>
+            <field name="perm_create" eval="1"/>
+            <field name="perm_unlink" eval="1"/>
+        </record>
+
+    </data>
+</odoo>

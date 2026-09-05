@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- ================================================================= -->
+        <!-- USER FORM VIEW EXTENSION — DealFlow Roles & Permission Matrix    -->
+        <!-- ================================================================= -->
+        <record id="view_users_form_dealflow" model="ir.ui.view">
+            <field name="name">res.users.form.dealflow</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//notebook" position="inside">
+                    <page string="DealFlow360 Governance" name="dealflow_governance">
+                        <group name="dealflow_role_group" string="Role &amp; Permissions (Problem Statement Section 4)">
+                            <group>
+                                <field name="dealflow_role" widget="radio"/>
+                            </group>
+                            <group string="Effective Permissions">
+                                <field name="dealflow_can_approve_l1" readonly="1"/>
+                                <field name="dealflow_can_approve_l2" readonly="1"/>
+                                <field name="dealflow_has_portal_access" readonly="1"/>
+                                <field name="dealflow_has_backend_access" readonly="1"/>
+                            </group>
+                        </group>
+                    </page>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>
