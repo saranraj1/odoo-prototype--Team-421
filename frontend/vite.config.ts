@@ -12,17 +12,18 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/api/dealflow': {
-        target: 'http://127.0.0.1:8069',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
       '/dealflow/portal': {
-        target: 'http://127.0.0.1:8069',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
       '/health': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+
     },
   },
 })
