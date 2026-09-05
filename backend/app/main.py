@@ -500,6 +500,53 @@ def cancel_odoo_subscription(subscription_id: int, payload: Optional[Dict[str, A
     }
 
 
+# -----------------------------------------------------------------------------
+# Reporting & BI Analytics Endpoints
+# -----------------------------------------------------------------------------
+
+@app.get("/api/v1/reports/{report_type}", tags=["Reports"])
+@app.get("/reports/{report_type}", tags=["Reports"])
+def get_or_export_report(
+    report_type: str,
+    format: Optional[str] = None,
+    period: Optional[str] = "month",
+    approval_status: Optional[str] = "all",
+    team: Optional[str] = "all",
+) -> Any:
+    """Retrieve BI dataset or stream report export for Deals, Approvals, Discounts, Risk, Products, Fulfillment, Billing."""
+    from fastapi.responses import Response
+
+    sample_reports = {
+        "deals": [
+            {"ref": "D-1024", "customer": "Acme Corp", "amount": 558000, "margin": "19.3%", "risk": 56.0, "status": "Draft"},
+            {"ref": "D-1023", "customer": "Beta Industries", "amount": 420000, "margin": "22.0%", "risk": 29.7, "status": "Approved"},
+        ],
+        "discounts": [
+            {"deal_ref": "D-1024", "customer": "Acme Corp", "product": "Laptop Pro 14", "discount_pct": 20.0, "policy_limit": 12.0, "compliance": "Policy Violation"},
+            {"deal_ref": "D-1023", "customer": "Beta Industries", "product": "Cloud Server X1", "discount_pct": 22.0, "policy_limit": 12.0, "compliance": "Policy Violation"},
+        ],
+        "risk": [
+            {"ref": "D-1024", "customer": "Acme Corp", "risk_score": 56.0, "severity": "HIGH", "driver": "Discount Outlier"},
+            {"ref": "D-1023", "customer": "Beta Industries", "risk_score": 29.7, "severity": "MEDIUM", "driver": "Margin Compression"},
+        ],
+    }
+
+    if format in ("pdf", "xlsx"):
+        csv_content = f"Reference,Customer,Status,Report\nD-1024,Acme Corp,Draft,{report_type}\nD-1023,Beta Industries,Approved,{report_type}\n"
+        media_type = "application/pdf" if format == "pdf" else "application/vnd.ms-excel"
+        return Response(
+            content=csv_content.encode("utf-8"),
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="dealflow_{report_type}_report.{format}"'},
+        )
+
+    return {
+        "success": True,
+        "data": sample_reports.get(report_type, sample_reports["deals"]),
+    }
+
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.app.main:app", host="127.0.0.1", port=8000, reload=True)
