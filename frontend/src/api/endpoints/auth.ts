@@ -36,7 +36,9 @@ export const authApi = {
     return {
       access_token: data.access_token,
       token_type: data.token_type,
-      partner: {
+      is_internal: !!data.is_internal,
+      user: data.user,
+      partner: data.partner || {
         id: data.partner_id || data.odoo_user_id || 1,
         name: data.name || 'Customer',
       },

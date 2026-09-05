@@ -107,6 +107,8 @@ export interface AuthResponse {
 export interface PortalAuthResponse {
   access_token: string;
   token_type: string;
+  is_internal?: boolean;
+  user?: AuthUser;
   partner: {
     id: number;
     name: string;

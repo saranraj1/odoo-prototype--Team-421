@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Bell, LogOut, User as UserIcon, Shield, Layers } from 'lucide-react';
+import { Bell, LogOut, User as UserIcon, Shield, Layers, ExternalLink } from 'lucide-react';
 import { useAuthStore } from '@/features/auth/authStore';
 import { getTabsForRole, UserRole } from '@/lib/rbac';
 import { NotificationsDrawer } from './NotificationsDrawer';
@@ -67,10 +67,19 @@ export const TopNav: React.FC = () => {
         </div>
 
         {/* Right side: Notifications & User Menu */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => navigate('/portal/quotations')}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
+            title="Preview B2B Customer Portal"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Customer Portal</span>
+          </button>
+
           <button
             onClick={() => setDrawerOpen(true)}
-            className="relative rounded-lg p-2 text-text-secondary hover:bg-elevated hover:text-text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-brand/30"
+            className="relative rounded-lg p-2 text-text-secondary hover:bg-elevated hover:text-text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-brand/30 cursor-pointer"
             aria-label={`Notifications, ${unreadCount} unread`}
           >
             <Bell className="h-4 w-4" />

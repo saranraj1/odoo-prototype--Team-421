@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from './authStore';
 import { authApi } from '@/api/endpoints/auth';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -43,12 +43,14 @@ export const LoginPage: React.FC = () => {
       // 1. Try API login endpoint
       const res = await authApi.login(emailToUse, passwordToUse);
       if (res.user.role === 'CUSTOMER') {
+        useAuthStore.getState().clearAuth();
         usePortalAuthStore.getState().setAuth(res.access_token, {
           id: (res.user as any).partner_id || res.user.odoo_user_id || res.user.id || 1,
           name: (res.user as any).company_name || res.user.name,
         });
         navigate('/portal/quotations');
       } else {
+        usePortalAuthStore.getState().clearAuth();
         setAuth(res.access_token, res.user);
         navigate('/');
       }
@@ -62,17 +64,20 @@ export const LoginPage: React.FC = () => {
 
       if (matched) {
         if (matched.role === 'CUSTOMER') {
+          useAuthStore.getState().clearAuth();
           usePortalAuthStore.getState().setAuth(`mock_token_portal_${matched.id}`, {
             id: matched.partner_id || matched.odoo_user_id || matched.id,
             name: matched.company_name || matched.name,
           });
           navigate('/portal/quotations');
         } else {
+          usePortalAuthStore.getState().clearAuth();
           setAuth(`mock_token_${matched.role.toLowerCase()}_${matched.id}`, matched as any);
           navigate('/');
         }
       } else {
         // Fallback default rep
+        usePortalAuthStore.getState().clearAuth();
         setAuth('mock_token_sales_rep', users.rep1 as any);
         navigate('/');
       }
@@ -335,6 +340,9 @@ export const LoginPage: React.FC = () => {
                 <Sparkles className="h-3 w-3 text-brand" />
                 Default Test Accounts (1-Click Login):
               </p>
+              <Link to="/portal/login" className="text-[10px] font-bold text-emerald-700 hover:underline">
+                Customer Portal Login &rarr;
+              </Link>
             </div>
             <div className="flex flex-wrap gap-1.5">
               <button

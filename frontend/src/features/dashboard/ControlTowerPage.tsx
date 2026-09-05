@@ -10,9 +10,11 @@ import { queryKeys } from '@/api/queryKeys';
 import { formatMoney, formatRelativeDate } from '@/lib/format';
 import type { ActionQueueItem } from '@/api/types';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
+import { useAuthStore } from '@/features/auth/authStore';
 
 export const ControlTowerPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const queryClient = useQueryClient();
 
   const { data: ctData, isLoading } = useQuery({
@@ -127,8 +129,12 @@ export const ControlTowerPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Control Tower"
-        subtitle="Executive governance cockpit, active SLA monitors, and real-time risk triage"
+        title={user?.role === 'ADMIN' ? 'Admin Dashboard / Control Tower' : 'Control Tower'}
+        subtitle={
+          user?.role === 'ADMIN'
+            ? 'Enterprise-wide commercial governance, cross-department oversight, and SLA monitors'
+            : 'Executive governance cockpit, active SLA monitors, and real-time risk triage'
+        }
       />
 
       {/* Row of 7 KPIs */}

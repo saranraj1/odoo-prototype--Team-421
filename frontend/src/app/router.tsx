@@ -60,7 +60,8 @@ import { useAuthStore } from '@/features/auth/authStore';
 
 const DashboardRouter: React.FC = () => {
   const { user } = useAuthStore();
-  if (user?.role === 'SALES_MANAGER') return <ControlTowerPage />;
+  if (user?.role === 'CUSTOMER') return <Navigate to="/portal/quotations" replace />;
+  if (user?.role === 'SALES_MANAGER' || user?.role === 'ADMIN') return <ControlTowerPage />;
   if (user?.role === 'FINANCE' || user?.role === 'FINANCE_DIRECTOR') return <OperationsDashboardPage />;
   return <SalesDashboardPage />;
 };

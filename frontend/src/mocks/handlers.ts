@@ -110,15 +110,54 @@ export const handlers = [
   http.post('*/api/v1/portal/auth/login', async ({ request }) => {
     const body = (await request.json()) as any;
     const loginLower = (body.login || '').toLowerCase().trim();
-    const customer = Object.values(mockState.users).find(
-      (u) => u.role === 'CUSTOMER' && (u.email.toLowerCase() === loginLower || u.name.toLowerCase().includes(loginLower))
-    ) || mockState.users.portalAcme;
+    const allUsers = Object.values(mockState.users);
+
+    // 1. Check if user is an internal enterprise team member
+    let internalUser = allUsers.find(
+      (u) =>
+        u.role !== 'CUSTOMER' &&
+        (u.email.toLowerCase() === loginLower || u.name.toLowerCase().includes(loginLower))
+    );
+
+    if (!internalUser) {
+      if (loginLower.includes('admin')) internalUser = mockState.users.admin;
+      else if (loginLower.includes('manager') || loginLower.includes('sunita')) internalUser = mockState.users.manager1;
+      else if (loginLower.includes('finance') || loginLower.includes('vikram')) internalUser = mockState.users.finance;
+      else if (loginLower.includes('rep') || loginLower.includes('rahul')) internalUser = mockState.users.rep1;
+    }
+
+    if (internalUser) {
+      return HttpResponse.json({
+        data: {
+          access_token: `mock_jwt_${internalUser.role.toLowerCase()}_${internalUser.id}`,
+          token_type: 'bearer',
+          expires_in: 43200,
+          is_internal: true,
+          user: internalUser,
+          partner: { id: internalUser.id, name: internalUser.name },
+        },
+      });
+    }
+
+    // 2. Otherwise resolve customer account
+    let customer = allUsers.find(
+      (u) =>
+        u.role === 'CUSTOMER' &&
+        (u.email.toLowerCase() === loginLower || u.name.toLowerCase().includes(loginLower))
+    );
+
+    if (!customer) {
+      if (loginLower.includes('beta')) customer = mockState.users.portalBeta;
+      else if (loginLower.includes('gamma')) customer = mockState.users.portalGamma;
+      else customer = mockState.users.portalAcme;
+    }
 
     return HttpResponse.json({
       data: {
         access_token: `mock_jwt_portal_${customer.id}`,
         token_type: 'bearer',
         expires_in: 14400,
+        is_internal: false,
         partner: { id: customer.partner_id || customer.id, name: customer.company_name || customer.name },
       },
     });
