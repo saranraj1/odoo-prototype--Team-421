@@ -5,7 +5,7 @@ Inherits 'stock.picking' to track multi-warehouse fulfillment batches,
 split shipment flags, and allocation breakdown details.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union, List
 import json
 
 try:
