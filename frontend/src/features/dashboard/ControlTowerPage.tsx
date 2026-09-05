@@ -50,10 +50,10 @@ export const ControlTowerPage: React.FC = () => {
       header: 'Severity',
       render: (item) => (
         <span
-          className={`px-2 py-0.5 rounded-chip text-[10px] font-bold ${
+          className={`inline-block w-16 text-center py-0.5 rounded-chip text-[10px] font-bold tracking-wide uppercase ${
             item.severity === 'HIGH'
-              ? 'bg-danger/20 text-danger border border-danger/40'
-              : 'bg-warning/20 text-warning border border-warning/40'
+              ? 'bg-danger/15 text-danger border border-danger/30'
+              : 'bg-warning/15 text-warning border border-warning/30'
           }`}
         >
           {item.severity || 'HIGH'}
@@ -135,7 +135,7 @@ export const ControlTowerPage: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         <KpiCard
           title="Pipeline Value"
-          value={formatMoney(kpis.pipeline_value)}
+          value={formatMoney(kpis.pipeline_value, 'INR', 0)}
           caption="Total governed pipeline"
         />
         <KpiCard
@@ -154,7 +154,7 @@ export const ControlTowerPage: React.FC = () => {
         />
         <KpiCard
           title="Discount Exposure"
-          value={formatMoney(kpis.discount_exposure_amount)}
+          value={formatMoney(kpis.discount_exposure_amount, 'INR', 0)}
           caption="Discount variance"
         />
         <KpiCard
@@ -198,12 +198,26 @@ export const ControlTowerPage: React.FC = () => {
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
-                <XAxis dataKey="name" stroke="#6B7684" fontSize={11} />
-                <YAxis stroke="#6B7684" fontSize={11} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1A2029', borderColor: '#2A313B' }}
+                <XAxis dataKey="name" stroke="#64748B" fontSize={11} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
+                <YAxis
+                  stroke="#64748B"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={{ stroke: '#E2E8F0' }}
+                  tickFormatter={(val) => `₹${val >= 100000 ? `${(val / 100000).toFixed(val % 100000 === 0 ? 0 : 1)}L` : val}`}
                 />
-                <Bar dataKey="value" fill="#3B9EFF" radius={[4, 4, 0, 0]} />
+                <Tooltip
+                  formatter={(val: any) => [formatMoney(Number(val) || 0), 'Pipeline Value']}
+                  contentStyle={{
+                    backgroundColor: '#0F172A',
+                    borderColor: '#334155',
+                    borderRadius: '8px',
+                    color: '#F8FAFC',
+                    fontSize: '12px',
+                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                  }}
+                />
+                <Bar dataKey="value" fill="#0284C7" radius={[4, 4, 0, 0]} maxBarSize={48} />
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -106,18 +106,18 @@ export const PortalNegotiationPage: React.FC = () => {
 
       {/* Order Totals */}
       <div className="flex justify-end">
-        <div className="w-full max-w-xs rounded-card border border-border bg-surface p-4 space-y-2 text-xs">
+        <div className="w-full max-w-xs rounded-card border border-border bg-surface p-4 space-y-2 text-xs shadow-sm">
           <div className="flex justify-between text-text-secondary">
             <span>Subtotal:</span>
-            <span className="tabular-nums">{formatMoney(deal.totals.subtotal, deal.currency_code)}</span>
+            <span className="tabular-nums font-medium">{formatMoney(deal.totals.subtotal, deal.currency_code)}</span>
           </div>
           <div className="flex justify-between text-text-secondary">
             <span>Taxes:</span>
-            <span className="tabular-nums">{formatMoney(deal.totals.tax, deal.currency_code)}</span>
+            <span className="tabular-nums font-medium">{formatMoney(deal.totals.tax, deal.currency_code)}</span>
           </div>
-          <div className="border-t border-border pt-2 flex justify-between font-bold text-sm text-text-primary">
+          <div className="border-t border-border pt-2.5 flex justify-between font-bold text-sm text-text-primary">
             <span>Total Payable:</span>
-            <span className="text-brand tabular-nums">{formatMoney(deal.totals.total, deal.currency_code)}</span>
+            <span className="text-emerald-700 dark:text-emerald-400 tabular-nums text-base">{formatMoney(deal.totals.total, deal.currency_code)}</span>
           </div>
         </div>
       </div>

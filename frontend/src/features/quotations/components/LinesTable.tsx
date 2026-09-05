@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Minus, Plus, Trash2 } from 'lucide-react';
 import { HintStrip } from '@/components/data/HintStrip';
 import { formatMoney, formatPct } from '@/lib/format';
@@ -49,16 +49,16 @@ export const LinesTable: React.FC<LinesTableProps> = ({
       <div className="rounded-card border border-border bg-surface overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-elevated text-text-secondary border-b border-border">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 text-[11px] uppercase tracking-wider font-semibold">
               <tr>
-                <th className="py-3 px-4 font-semibold">Product</th>
-                <th className="py-3 px-4 font-semibold text-center w-28">Qty</th>
-                <th className="py-3 px-4 font-semibold text-right">Price</th>
-                <th className="py-3 px-4 font-semibold text-center w-28">Discount</th>
-                <th className="py-3 px-4 font-semibold text-center w-20">Limit</th>
-                <th className="py-3 px-4 font-semibold text-center w-24">Status</th>
-                <th className="py-3 px-4 font-semibold text-right">Margin</th>
-                <th className="py-3 px-4 font-semibold text-right">Subtotal</th>
+                <th className="py-3 px-4">Product</th>
+                <th className="py-3 px-4 text-center w-28">Qty</th>
+                <th className="py-3 px-4 text-right">Price</th>
+                <th className="py-3 px-4 text-center w-28">Discount</th>
+                <th className="py-3 px-4 text-center w-20">Limit</th>
+                <th className="py-3 px-4 text-center w-24">Status</th>
+                <th className="py-3 px-4 text-right">Margin</th>
+                <th className="py-3 px-4 text-right">Subtotal</th>
                 {!readOnly && <th className="py-3 px-2 w-10"></th>}
               </tr>
             </thead>
@@ -71,13 +71,13 @@ export const LinesTable: React.FC<LinesTableProps> = ({
                   <tr
                     key={l.odoo_line_id}
                     className={`transition-colors ${
-                      isHighlighted ? 'bg-brand/10' : 'hover:bg-elevated/40'
+                      isHighlighted ? 'bg-sky-50/50' : 'hover:bg-slate-50/60'
                     }`}
                   >
                     <td className="py-3 px-4">
                       <div className="font-semibold text-text-primary">{l.product_name}</div>
                       {l.is_recurring && (
-                        <span className="inline-block mt-0.5 text-[10px] text-info font-medium">
+                        <span className="inline-block mt-0.5 text-[10px] text-sky-700 font-medium">
                           Recurring · Monthly
                         </span>
                       )}
@@ -85,20 +85,20 @@ export const LinesTable: React.FC<LinesTableProps> = ({
 
                     <td className="py-3 px-4 text-center">
                       {!readOnly ? (
-                        <div className="inline-flex items-center rounded-input border border-border bg-elevated/60 p-0.5">
+                        <div className="inline-flex items-center rounded-md border border-slate-200 bg-white shadow-2xs">
                           <button
                             type="button"
                             onClick={() => onUpdateLine(l.odoo_line_id, { qty: Math.max(1, l.qty - 1) })}
-                            className="p-1 hover:text-brand"
+                            className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-l-md transition-colors"
                             disabled={l.qty <= 1}
                           >
                             <Minus className="h-3 w-3" />
                           </button>
-                          <span className="px-2 font-medium tabular-nums">{l.qty}</span>
+                          <span className="w-8 text-center text-xs font-semibold tabular-nums text-slate-800">{l.qty}</span>
                           <button
                             type="button"
                             onClick={() => onUpdateLine(l.odoo_line_id, { qty: l.qty + 1 })}
-                            className="p-1 hover:text-brand"
+                            className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-r-md transition-colors"
                           >
                             <Plus className="h-3 w-3" />
                           </button>
@@ -123,9 +123,9 @@ export const LinesTable: React.FC<LinesTableProps> = ({
                             onChange={(e) =>
                               handleDiscountChange(l.odoo_line_id, Number(e.target.value))
                             }
-                            className="w-16 h-7 text-right pr-4 rounded border border-border bg-elevated text-xs font-semibold tabular-nums focus:border-brand focus:outline-none"
+                            className="w-16 h-7 text-right pr-4 rounded-md border border-slate-200 bg-white text-xs font-semibold tabular-nums focus:border-sky-600 focus:ring-1 focus:ring-sky-600/20 focus:outline-none shadow-2xs"
                           />
-                          <span className="absolute right-1.5 text-[11px] text-text-muted">%</span>
+                          <span className="absolute right-1.5 text-[11px] font-medium text-slate-400 pointer-events-none">%</span>
                         </div>
                       ) : (
                         <span className="tabular-nums font-semibold">{formatPct(l.discount_pct)}</span>
@@ -138,18 +138,18 @@ export const LinesTable: React.FC<LinesTableProps> = ({
 
                     <td className="py-3 px-4 text-center">
                       {isOver ? (
-                        <span className="inline-block px-2 py-0.5 rounded-chip text-[10px] font-bold bg-danger/20 text-danger border border-danger/40 animate-pulse">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-chip text-[10px] font-bold bg-red-50 text-red-800 border border-red-200">
                           OVER (+{l.overage_pts.toFixed(0)}pt)
                         </span>
                       ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-chip text-[10px] font-bold bg-success/20 text-success border border-success/40">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-chip text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
                           OK
                         </span>
                       )}
                     </td>
 
                     <td className="py-3 px-4 text-right tabular-nums">
-                      <span className={l.margin < 0 ? 'text-danger font-semibold' : 'text-text-primary'}>
+                      <span className={l.margin < 0 ? 'text-red-600 font-semibold' : 'text-slate-700 font-medium'}>
                         {formatMoney(l.margin, currency)}
                       </span>
                     </td>

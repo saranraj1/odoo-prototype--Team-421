@@ -1,6 +1,10 @@
-﻿import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 
-export function formatMoney(amount: number | string | null | undefined, currency: string = 'INR'): string {
+export function formatMoney(
+  amount: number | string | null | undefined,
+  currency: string = 'INR',
+  fractionDigits: number = 2
+): string {
   if (amount === null || amount === undefined || isNaN(Number(amount))) {
     return '—';
   }
@@ -9,11 +13,11 @@ export function formatMoney(amount: number | string | null | undefined, currency
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: currency || 'INR',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
     }).format(num);
   } catch {
-    return `${currency} ${num.toFixed(2)}`;
+    return `${currency} ${num.toFixed(fractionDigits)}`;
   }
 }
 

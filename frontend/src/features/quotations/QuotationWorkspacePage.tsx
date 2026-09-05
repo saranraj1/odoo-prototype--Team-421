@@ -261,14 +261,14 @@ export const QuotationWorkspacePage: React.FC = () => {
 
           {/* Sub-Tabs Section */}
           <div className="rounded-card border border-border bg-surface p-5 space-y-4">
-            <div className="flex border-b border-border space-x-4">
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-lg border border-slate-200/80 dark:border-slate-700/60 overflow-x-auto">
               <button
                 type="button"
                 onClick={() => setActiveTab('negotiation')}
-                className={`flex items-center gap-1.5 pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                   activeTab === 'negotiation'
-                    ? 'border-brand text-brand'
-                    : 'border-transparent text-text-muted hover:text-text-secondary'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-bold'
+                    : 'text-text-muted hover:text-text-primary hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
                 }`}
               >
                 <MessageSquare className="h-3.5 w-3.5" />
@@ -283,10 +283,10 @@ export const QuotationWorkspacePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('fulfillment')}
-                className={`flex items-center gap-1.5 pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                   activeTab === 'fulfillment'
-                    ? 'border-brand text-brand'
-                    : 'border-transparent text-text-muted hover:text-text-secondary'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-bold'
+                    : 'text-text-muted hover:text-text-primary hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
                 }`}
               >
                 <Truck className="h-3.5 w-3.5" />
@@ -296,10 +296,10 @@ export const QuotationWorkspacePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('billing')}
-                className={`flex items-center gap-1.5 pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                   activeTab === 'billing'
-                    ? 'border-brand text-brand'
-                    : 'border-transparent text-text-muted hover:text-text-secondary'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-bold'
+                    : 'text-text-muted hover:text-text-primary hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
                 }`}
               >
                 <CreditCard className="h-3.5 w-3.5" />
@@ -309,10 +309,10 @@ export const QuotationWorkspacePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('timeline')}
-                className={`flex items-center gap-1.5 pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                   activeTab === 'timeline'
-                    ? 'border-brand text-brand'
-                    : 'border-transparent text-text-muted hover:text-text-secondary'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-bold'
+                    : 'text-text-muted hover:text-text-primary hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
                 }`}
               >
                 <History className="h-3.5 w-3.5" />

@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { KpiCard } from '@/components/data/KpiCard';
 import { DataTable, ColumnDef } from '@/components/data/DataTable';
@@ -27,7 +27,7 @@ export const ReportsPage: React.FC = () => {
     { key: 'ref', header: 'Reference', render: (d) => <span className="font-bold text-text-primary">{d.ref}</span> },
     { key: 'customer', header: 'Customer' },
     { key: 'rep', header: 'Sales Rep' },
-    { key: 'amount', header: 'Order Amount', render: (d) => <span className="tabular-nums font-semibold">{formatMoney(d.amount)}</span> },
+    { key: 'amount', header: 'Order Amount', className: 'text-right', render: (d) => <span className="tabular-nums font-semibold">{formatMoney(d.amount)}</span> },
     { key: 'margin', header: 'Blended Margin', className: 'text-right' },
     { key: 'risk', header: 'Risk Score', className: 'text-center font-bold text-danger' },
     { key: 'status', header: 'Status' },
@@ -73,16 +73,16 @@ export const ReportsPage: React.FC = () => {
       </div>
 
       {/* Tab Selectors */}
-      <div className="flex border-b border-border space-x-2 overflow-x-auto">
+      <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-lg border border-slate-200/80 dark:border-slate-700/60 overflow-x-auto">
         {(['deals', 'approvals', 'discounts', 'risk', 'products', 'fulfillment', 'billing'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-xs font-semibold capitalize border-b-2 transition-colors whitespace-nowrap ${
+            className={`px-3.5 py-1.5 text-xs font-semibold capitalize rounded-md transition-all whitespace-nowrap ${
               activeTab === tab
-                ? 'border-brand text-brand'
-                : 'border-transparent text-text-muted hover:text-text-secondary'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-bold'
+                : 'text-text-muted hover:text-text-primary hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
             }`}
           >
             {tab} Report
@@ -100,10 +100,19 @@ export const ReportsPage: React.FC = () => {
             <div className="h-48 w-full max-w-lg">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={approvalTurnaroundData}>
-                  <XAxis dataKey="stage" stroke="#6B7684" fontSize={11} />
-                  <YAxis stroke="#6B7684" fontSize={11} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1A2029', borderColor: '#2A313B' }} />
-                  <Bar dataKey="hours" fill="#3B9EFF" radius={[4, 4, 0, 0]} />
+                  <XAxis dataKey="stage" stroke="#64748B" fontSize={11} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
+                  <YAxis stroke="#64748B" fontSize={11} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} unit="h" />
+                  <Tooltip
+                    formatter={(val: any) => [`${val} hrs`, 'Turnaround']}
+                    contentStyle={{
+                      backgroundColor: '#0F172A',
+                      borderColor: '#334155',
+                      borderRadius: '8px',
+                      color: '#F8FAFC',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Bar dataKey="hours" fill="#0284C7" radius={[4, 4, 0, 0]} maxBarSize={40} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

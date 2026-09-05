@@ -1,8 +1,9 @@
-﻿import React from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RiskBadge } from '@/components/data/RiskBadge';
 import { StatusChip } from '@/components/data/StatusChip';
 import { formatMoney } from '@/lib/format';
+import { Inbox } from 'lucide-react';
 
 interface KanbanColumn {
   status: string;
@@ -51,15 +52,16 @@ export const QuotationKanban: React.FC<QuotationKanbanProps> = ({ columns }) => 
 
           <div className="flex-1 space-y-2.5 min-h-[300px]">
             {col.items.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-center p-4 text-[11px] text-text-muted border border-dashed border-border/60 rounded-input">
-                No quotations
+              <div className="h-full flex flex-col items-center justify-center text-center p-4 text-[11px] text-slate-400 border border-dashed border-slate-200 rounded-input gap-1.5 min-h-[140px]">
+                <Inbox className="h-4 w-4 text-slate-300" />
+                <span>No quotations</span>
               </div>
             ) : (
               col.items.map((deal) => (
                 <div
                   key={deal.id}
                   onClick={() => navigate(`/quotations/${deal.id}`)}
-                  className="rounded-input border border-border bg-surface p-3 shadow-sm hover:border-brand/50 hover:bg-elevated/40 transition-all cursor-pointer space-y-2"
+                  className="rounded-input border border-border bg-surface p-3 shadow-xs hover:border-brand/50 hover:bg-elevated/40 transition-all cursor-pointer space-y-2"
                 >
                   <div className="flex items-start justify-between gap-1">
                     <span className="font-bold text-xs text-text-primary line-clamp-1">
@@ -75,9 +77,11 @@ export const QuotationKanban: React.FC<QuotationKanbanProps> = ({ columns }) => 
                     </span>
                   </div>
 
-                  <div className="pt-1 flex items-center justify-between border-t border-border/40">
-                    <StatusChip status={deal.approval_state || deal.status} />
-                    <div className="h-5 w-5 rounded-chip bg-brand/20 text-brand flex items-center justify-center text-[10px] font-bold">
+                  <div className="pt-1.5 flex items-center justify-between border-t border-border/40 gap-2">
+                    <div className="min-w-0 flex-1">
+                      <StatusChip status={deal.approval_state || deal.status} className="truncate max-w-[135px]" />
+                    </div>
+                    <div className="h-5 w-5 shrink-0 rounded-chip bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-bold">
                       {deal.owner?.name?.charAt(0) || 'R'}
                     </div>
                   </div>

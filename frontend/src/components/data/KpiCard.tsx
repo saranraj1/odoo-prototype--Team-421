@@ -41,20 +41,26 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       )}
       onClick={handleClick}
     >
-      <CardContent className="p-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-text-secondary">
+      <CardContent className="p-3.5 sm:p-4">
+        <p className="text-xs font-medium uppercase tracking-wider text-text-secondary truncate">
           {title}
         </p>
         <div
+          title={typeof value === 'string' || typeof value === 'number' ? String(value) : undefined}
           className={cn(
-            'mt-2 text-2xl font-bold tracking-tight text-text-primary tabular-nums',
+            'mt-2 font-bold tracking-tight text-text-primary tabular-nums truncate',
+            typeof value === 'string' && value.length > 10
+              ? 'text-lg xl:text-xl'
+              : typeof value === 'string' && value.length > 7
+              ? 'text-xl xl:text-2xl'
+              : 'text-2xl',
             valueClassName
           )}
         >
           {value}
         </div>
         {caption && (
-          <p className="mt-1 text-xs text-text-muted">{caption}</p>
+          <p className="mt-1 text-xs text-text-muted truncate">{caption}</p>
         )}
       </CardContent>
     </Card>

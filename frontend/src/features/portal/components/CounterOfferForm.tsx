@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -112,7 +112,12 @@ export const CounterOfferForm: React.FC<CounterOfferFormProps> = ({
       </div>
 
       <div className="flex justify-end">
-        <Button type="submit" size="sm" disabled={isLoading} className="gap-1.5 font-semibold">
+        <Button
+          type="submit"
+          size="sm"
+          disabled={isLoading}
+          className="gap-1.5 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+        >
           {isLoading ? (
             <>
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

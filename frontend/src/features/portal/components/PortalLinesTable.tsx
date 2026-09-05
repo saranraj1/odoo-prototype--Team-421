@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { MessageSquare } from 'lucide-react';
 import { formatMoney, formatPct } from '@/lib/format';
 
@@ -44,7 +44,7 @@ export const PortalLinesTable: React.FC<PortalLinesTableProps> = ({
                 <td className="py-3 px-4 text-right tabular-nums text-text-secondary">
                   {formatMoney(line.price_unit, currency)}
                 </td>
-                <td className="py-3 px-4 text-center tabular-nums font-medium text-brand">
+                <td className="py-3 px-4 text-center tabular-nums font-medium text-emerald-700 dark:text-emerald-400">
                   {formatPct(line.discount_pct)}
                 </td>
                 <td className="py-3 px-4 text-right font-bold tabular-nums text-text-primary">
@@ -54,7 +54,7 @@ export const PortalLinesTable: React.FC<PortalLinesTableProps> = ({
                   <button
                     type="button"
                     onClick={() => onCommentClick && onCommentClick(line.line_id, line.product_name)}
-                    className="p-1 text-text-muted hover:text-brand transition-colors rounded-chip"
+                    className="p-1 text-text-muted hover:text-emerald-600 transition-colors rounded-chip"
                     title="Comment on line"
                   >
                     <MessageSquare className="h-3.5 w-3.5" />

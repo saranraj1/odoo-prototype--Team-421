@@ -163,27 +163,26 @@ export const ApprovalDetailPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              variant="success"
               onClick={() => handleOpenDecision('APPROVE')}
-              className="gap-1 font-bold text-xs"
+              className="gap-1.5 font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
             >
               <CheckCircle className="h-3.5 w-3.5" />
               Approve
             </Button>
             <Button
               size="sm"
-              variant="warning"
+              variant="outline"
               onClick={() => handleOpenDecision('RETURN')}
-              className="gap-1 font-semibold text-xs"
+              className="gap-1.5 font-medium text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
               Return for Revision
             </Button>
             <Button
               size="sm"
-              variant="danger"
+              variant="outline"
               onClick={() => handleOpenDecision('REJECT')}
-              className="gap-1 font-semibold text-xs"
+              className="gap-1.5 font-medium text-xs border-red-200 text-red-700 hover:bg-red-50"
             >
               <XCircle className="h-3.5 w-3.5" />
               Reject
@@ -192,7 +191,7 @@ export const ApprovalDetailPage: React.FC = () => {
               size="sm"
               variant="outline"
               onClick={() => handleOpenDecision('ESCALATE')}
-              className="gap-1 text-xs"
+              className="gap-1.5 text-xs text-slate-600 hover:text-slate-900 border-slate-200"
             >
               <ArrowUpRight className="h-3.5 w-3.5" />
               Escalate
@@ -209,14 +208,14 @@ export const ApprovalDetailPage: React.FC = () => {
       {/* Section: Why This Quote Was Flagged */}
       <Card className="border-border bg-surface">
         <CardHeader>
-          <CardTitle className="text-sm font-bold text-info uppercase tracking-wider">
+          <CardTitle className="text-sm font-bold text-slate-900 uppercase tracking-wider">
             Why This Quote Was Flagged
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="overflow-x-auto rounded-input border border-border">
             <table className="w-full text-left text-xs">
-              <thead className="bg-elevated text-text-secondary border-b border-border">
+              <thead className="bg-slate-50 text-slate-700 text-[11px] uppercase tracking-wider font-semibold border-b border-border">
                 <tr>
                   <th className="py-2.5 px-4 font-semibold">Line Item</th>
                   <th className="py-2.5 px-4 font-semibold text-center">Discount Given</th>
@@ -228,15 +227,18 @@ export const ApprovalDetailPage: React.FC = () => {
                 {quote.lines.map((l) => {
                   const isOver = l.overage_pts > 0;
                   return (
-                    <tr key={l.odoo_line_id} className="hover:bg-elevated/30">
+                    <tr
+                      key={l.odoo_line_id}
+                      className={isOver ? 'bg-red-50/40 hover:bg-red-50/60' : 'hover:bg-elevated/30'}
+                    >
                       <td className="py-2.5 px-4 font-medium text-text-primary">{l.product_name}</td>
                       <td className="py-2.5 px-4 text-center tabular-nums">{formatPct(l.discount_pct)}</td>
                       <td className="py-2.5 px-4 text-center tabular-nums text-text-muted">{formatPct(l.ceiling_pct)}</td>
                       <td className="py-2.5 px-4 text-center font-bold">
                         {isOver ? (
-                          <span className="text-danger">+{l.overage_pts.toFixed(0)} pt OVER</span>
+                          <span className="text-red-700 bg-red-100/80 px-2 py-0.5 rounded-chip text-[11px]">+{l.overage_pts.toFixed(0)} pt OVER</span>
                         ) : (
-                          <span className="text-success">0 pt – OK</span>
+                          <span className="text-emerald-700">0 pt – OK</span>
                         )}
                       </td>
                     </tr>

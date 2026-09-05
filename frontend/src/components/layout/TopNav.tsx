@@ -53,10 +53,10 @@ export const TopNav: React.FC = () => {
                 to={tab.path}
                 end={tab.path === '/'}
                 className={({ isActive }) =>
-                  `rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
+                  `rounded-md px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
                     isActive
-                      ? 'bg-brand text-white shadow-xs'
-                      : 'text-text-secondary hover:bg-elevated hover:text-text-primary'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`
                 }
               >

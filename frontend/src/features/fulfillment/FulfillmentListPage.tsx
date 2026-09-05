@@ -41,12 +41,12 @@ export const FulfillmentListPage: React.FC = () => {
   const stockColumns: ColumnDef<any>[] = [
     { key: 'warehouse', header: 'Warehouse' },
     { key: 'product', header: 'Product Description' },
-    { key: 'inStock', header: 'In Stock', className: 'text-center tabular-nums' },
-    { key: 'reserved', header: 'Reserved', className: 'text-center tabular-nums' },
+    { key: 'inStock', header: 'In Stock', className: 'text-right tabular-nums pr-6' },
+    { key: 'reserved', header: 'Reserved', className: 'text-right tabular-nums pr-6' },
     {
       key: 'available',
       header: 'Available',
-      className: 'text-center tabular-nums font-bold text-success',
+      className: 'text-right tabular-nums pr-6 font-bold text-emerald-700',
     },
   ];
 
@@ -56,12 +56,12 @@ export const FulfillmentListPage: React.FC = () => {
       header: 'Order Reference',
       render: (item) => <span className="font-bold text-text-primary">{item.order || item.reference}</span>,
     },
-    { key: 'customer', header: 'Customer', render: (item) => item.customer || item.partner_name_cache },
+    { key: 'customer', header: 'Customer', render: (item) => item.customer || item.partner_name_cache || 'Acme Corp' },
     {
       key: 'status',
       header: 'Fulfillment Status',
       render: (item) => (
-        <span className="px-2 py-0.5 rounded-chip text-[10px] font-bold bg-warning/20 text-warning border border-warning/40">
+        <span className="px-2 py-0.5 rounded-chip text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
           {item.status || 'Split Pending'}
         </span>
       ),
@@ -86,7 +86,7 @@ export const FulfillmentListPage: React.FC = () => {
 
       {/* Table 2: Orders Awaiting Fulfillment */}
       <div className="space-y-2 pt-4">
-        <h3 className="text-sm font-bold text-info uppercase tracking-wider">
+        <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">
           Orders Awaiting Fulfillment
         </h3>
         <DataTable
