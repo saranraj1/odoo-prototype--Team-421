@@ -21,6 +21,7 @@ export const ApprovalDetailPage: React.FC = () => {
   const [decisionModalOpen, setDecisionModalOpen] = useState(false);
   const [decisionType, setDecisionType] = useState<'APPROVE' | 'REJECT' | 'RETURN' | 'ESCALATE'>('APPROVE');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastError, setToastError] = useState<string | null>(null);
 
   const { data: workspace, isLoading } = useQuery({
     queryKey: queryKeys.deals.workspace(dealId),
@@ -31,8 +32,14 @@ export const ApprovalDetailPage: React.FC = () => {
     mutationFn: (reason?: string) => approvalsApi.approve(dealId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.deals.workspace(dealId) });
+      queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      setToastError(null);
       setDecisionModalOpen(false);
       setToastMessage('Quotation approved and unlocked in Odoo.');
+    },
+    onError: (err: any) => {
+      setToastError(err?.message || 'Approval failed. Please try again.');
     },
   });
 
@@ -40,8 +47,14 @@ export const ApprovalDetailPage: React.FC = () => {
     mutationFn: (reason: string) => approvalsApi.reject(dealId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.deals.workspace(dealId) });
+      queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      setToastError(null);
       setDecisionModalOpen(false);
       setToastMessage('Quotation rejected.');
+    },
+    onError: (err: any) => {
+      setToastError(err?.message || 'Rejection failed. Please try again.');
     },
   });
 
@@ -49,8 +62,14 @@ export const ApprovalDetailPage: React.FC = () => {
     mutationFn: (reason: string) => approvalsApi.returnForRevision(dealId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.deals.workspace(dealId) });
+      queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      setToastError(null);
       setDecisionModalOpen(false);
       setToastMessage('Quotation returned to sales representative for revision.');
+    },
+    onError: (err: any) => {
+      setToastError(err?.message || 'Return failed. Please try again.');
     },
   });
 
@@ -58,8 +77,14 @@ export const ApprovalDetailPage: React.FC = () => {
     mutationFn: (reason?: string) => approvalsApi.escalate(dealId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.deals.workspace(dealId) });
+      queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      setToastError(null);
       setDecisionModalOpen(false);
-      setToastMessage('Quotation escalated.');
+      setToastMessage('Quotation escalated to higher executive authority.');
+    },
+    onError: (err: any) => {
+      setToastError(err?.message || 'Escalation failed. Please try again.');
     },
   });
 
@@ -74,6 +99,8 @@ export const ApprovalDetailPage: React.FC = () => {
   const { deal, customer, quote, risk, approval, timeline } = workspace;
 
   const handleOpenDecision = (type: 'APPROVE' | 'REJECT' | 'RETURN' | 'ESCALATE') => {
+    setToastError(null);
+    setToastMessage(null);
     setDecisionType(type);
     setDecisionModalOpen(true);
   };
@@ -133,8 +160,16 @@ export const ApprovalDetailPage: React.FC = () => {
       </div>
 
       {toastMessage && (
-        <div className="p-3 rounded-input bg-success/20 border border-success/50 text-success text-xs font-semibold">
-          ✓ {toastMessage}
+        <div className="p-3 rounded-input bg-success/20 border border-success/50 text-success text-xs font-semibold flex items-center justify-between">
+          <span>✓ {toastMessage}</span>
+          <button onClick={() => setToastMessage(null)} className="text-success hover:opacity-80 text-sm font-bold">×</button>
+        </div>
+      )}
+
+      {toastError && (
+        <div className="p-3 rounded-input bg-danger/20 border border-danger/50 text-danger text-xs font-semibold flex items-center justify-between">
+          <span>✕ {toastError}</span>
+          <button onClick={() => setToastError(null)} className="text-danger hover:opacity-80 text-sm font-bold">×</button>
         </div>
       )}
 
@@ -305,6 +340,7 @@ export const ApprovalDetailPage: React.FC = () => {
         onOpenChange={setDecisionModalOpen}
         decisionType={decisionType}
         onConfirm={handleConfirmDecision}
+        errorMessage={toastError}
         isLoading={
           approveMutation.isPending ||
           rejectMutation.isPending ||

@@ -5,10 +5,64 @@ import type { DealWorkspace, ControlTowerData, DealAlertItem } from '@/api/types
 
 class MockStateManager {
   public goldenDeal: DealWorkspace = JSON.parse(JSON.stringify(INITIAL_GOLDEN_DEAL));
+  public workspaces: Record<string, DealWorkspace> = {};
   public products = [...MOCK_PRODUCTS];
   public partners = [...MOCK_PARTNERS];
   public warehouses = [...MOCK_WAREHOUSES];
   public users: Record<string, UserAccountData> = getStoredUsers();
+
+  public getOrCreateWorkspace(id: string): DealWorkspace {
+    if (this.workspaces[id]) {
+      return this.workspaces[id];
+    }
+    if (id === 'deal_d1024_acme') {
+      this.workspaces[id] = this.goldenDeal;
+      return this.goldenDeal;
+    }
+
+    const foundDeal = this.deals.find((d) => d.id === id);
+    const foundApproval = this.approvals.find((a) => a.id === id);
+
+    const ws: DealWorkspace = JSON.parse(JSON.stringify(this.goldenDeal));
+    ws.deal.id = id;
+
+    if (foundDeal) {
+      ws.deal.reference = foundDeal.reference;
+      ws.deal.odoo_order_name = foundDeal.odoo_order_name;
+      ws.deal.status = (foundDeal.status === 'PENDING_APPROVAL' ? 'DRAFT' : foundDeal.status) as any;
+      ws.deal.approval_state = foundDeal.approval_state as any;
+      ws.deal.required_level = (foundDeal.required_level === 'MANAGER_ONLY' ? 'MANAGER' : foundDeal.required_level) as any;
+      ws.deal.health_status = foundDeal.health_status;
+      ws.deal.current_risk_score = foundDeal.current_risk_score;
+      ws.deal.current_severity = foundDeal.current_severity;
+      ws.deal.amount_total_cache = foundDeal.amount_total_cache;
+      ws.customer.name = foundDeal.partner_name_cache;
+      ws.customer.partner_id = foundDeal.partner_id;
+      ws.risk.score = foundDeal.current_risk_score;
+      ws.risk.severity = foundDeal.current_severity;
+      ws.approval.state = foundDeal.approval_state as any;
+      ws.approval.can_decide =
+        foundDeal.approval_state === 'PENDING_MANAGER' ||
+        foundDeal.approval_state === 'PENDING_FINANCE';
+    } else if (foundApproval) {
+      ws.deal.reference = foundApproval.reference;
+      ws.customer.name = foundApproval.customer;
+      ws.risk.score = foundApproval.risk_score;
+      ws.risk.severity = foundApproval.severity;
+      ws.approval.state =
+        foundApproval.status === 'PENDING'
+          ? foundApproval.stage === 'Finance'
+            ? 'PENDING_FINANCE'
+            : 'PENDING_MANAGER'
+          : (foundApproval.status as any);
+      ws.deal.approval_state = ws.approval.state;
+      ws.deal.status = 'DRAFT';
+      ws.approval.can_decide = foundApproval.status === 'PENDING';
+    }
+
+    this.workspaces[id] = ws;
+    return ws;
+  }
 
   public reloadUsers() {
     this.users = getStoredUsers();
@@ -381,6 +435,7 @@ class MockStateManager {
 
   public reset() {
     this.goldenDeal = JSON.parse(JSON.stringify(INITIAL_GOLDEN_DEAL));
+    this.workspaces = { deal_d1024_acme: this.goldenDeal };
     this.users = JSON.parse(JSON.stringify(INITIAL_MOCK_USERS));
     saveStoredUsers(this.users);
   }

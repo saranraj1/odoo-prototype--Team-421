@@ -240,41 +240,8 @@ export const handlers = [
 
   http.get('*/api/v1/deals/:id/workspace', ({ params }) => {
     const id = String(params.id);
-    if (id === 'deal_d1023_beta') {
-      const copy = JSON.parse(JSON.stringify(mockState.goldenDeal));
-      copy.deal.id = 'deal_d1023_beta';
-      copy.deal.reference = 'D-1023';
-      copy.deal.odoo_order_name = 'SO-2026-011';
-      copy.deal.current_risk_score = 29.7;
-      copy.deal.current_severity = 'MEDIUM';
-      copy.deal.health_status = 'AT_RISK';
-      copy.deal.amount_total_cache = 420000;
-      copy.customer.partner_id = 2;
-      copy.customer.name = 'Beta Industries';
-      copy.customer.tier_code = 'SILVER';
-      copy.risk.score = 29.7;
-      copy.risk.severity = 'MEDIUM';
-      return HttpResponse.json({ data: copy });
-    }
-    if (id === 'deal_d1021_delta') {
-      const copy = JSON.parse(JSON.stringify(mockState.goldenDeal));
-      copy.deal.id = 'deal_d1021_delta';
-      copy.deal.reference = 'D-1021';
-      copy.deal.odoo_order_name = 'SO-2026-009';
-      copy.deal.current_risk_score = 44.5;
-      copy.deal.current_severity = 'MEDIUM';
-      copy.deal.health_status = 'HEALTHY';
-      copy.deal.amount_total_cache = 780000;
-      copy.deal.approval_state = 'PENDING_FINANCE';
-      copy.approval.state = 'PENDING_FINANCE';
-      copy.customer.partner_id = 3;
-      copy.customer.name = 'Delta Systems Inc';
-      copy.customer.tier_code = 'PLATINUM';
-      copy.risk.score = 44.5;
-      copy.risk.severity = 'MEDIUM';
-      return HttpResponse.json({ data: copy });
-    }
-    return HttpResponse.json({ data: mockState.goldenDeal });
+    const ws = mockState.getOrCreateWorkspace(id);
+    return HttpResponse.json({ data: ws });
   }),
 
   // Approvals List & Inbox
@@ -350,28 +317,261 @@ export const handlers = [
   }),
 
   // Approval actions
-  http.post('*/api/v1/deals/:id/approval/approve', () => {
-    if (mockState.goldenDeal.approval.state === 'PENDING_MANAGER') {
-      mockState.goldenDeal.approval.state = 'PENDING_FINANCE';
-      mockState.goldenDeal.next_best_action = {
+  http.post('*/api/v1/deals/:id/approval/approve', async ({ params, request }) => {
+    const id = String(params.id);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const ws = mockState.getOrCreateWorkspace(id);
+    const reason = body?.reason || 'Quotation approved';
+
+    if (ws.approval.state === 'PENDING_MANAGER' && ws.deal.required_level === 'MANAGER_AND_FINANCE') {
+      ws.approval.state = 'PENDING_FINANCE';
+      ws.deal.approval_state = 'PENDING_FINANCE';
+      ws.timeline.unshift({
+        id: `t_${Date.now()}`,
+        event_type: 'APPROVED_STAGE_1',
+        actor_name: 'Sunita Sharma (Sales Manager)',
+        actor_role: 'SALES_MANAGER',
+        reason,
+        created_at: new Date().toISOString(),
+        summary: 'Stage 1 Sales Manager approval granted',
+      });
+      ws.next_best_action = {
         type: 'FINANCE_APPROVAL_REQUIRED',
         priority: 1,
         title: 'Awaiting Finance Officer Approval',
         explanation: 'Stage 1 approved by Sales Manager. Awaiting Stage 2 Finance sign-off.',
-        cta_endpoint: '/approvals/deal_d1024_acme',
+        cta_endpoint: `/approvals/${id}`,
       };
-    } else if (mockState.goldenDeal.approval.state === 'PENDING_FINANCE') {
-      mockState.goldenDeal.approval.state = 'APPROVED';
-      mockState.goldenDeal.deal.approval_state = 'APPROVED';
-      mockState.goldenDeal.next_best_action = {
+      const app = mockState.approvals.find((a) => a.id === id);
+      if (app) {
+        app.stage = 'Finance';
+        app.assigned_to = 'Vikram Finance Officer';
+      }
+      const d = mockState.deals.find((x) => x.id === id);
+      if (d) {
+        d.approval_state = 'PENDING_FINANCE';
+      }
+    } else {
+      ws.approval.state = 'APPROVED';
+      ws.deal.approval_state = 'APPROVED';
+      ws.deal.status = 'DRAFT';
+      ws.approval.can_decide = false;
+      ws.timeline.unshift({
+        id: `t_${Date.now()}`,
+        event_type: 'APPROVED',
+        actor_name: 'Vikram Mehta (Finance Officer)',
+        actor_role: 'FINANCE',
+        reason,
+        created_at: new Date().toISOString(),
+        summary: 'Governance approval granted and Odoo quotation unlocked',
+      });
+      ws.next_best_action = {
         type: 'SEND_TO_CUSTOMER',
         priority: 1,
         title: 'Ready to Send to Customer',
         explanation: 'All internal approval stages completed and quotation unlocked.',
-        cta_endpoint: '/quotations/deal_d1024_acme',
+        cta_endpoint: `/quotations/${id}`,
       };
+      const app = mockState.approvals.find((a) => a.id === id);
+      if (app) {
+        app.status = 'APPROVED';
+      }
+      const d = mockState.deals.find((x) => x.id === id);
+      if (d) {
+        d.status = 'APPROVED' as any;
+        d.approval_state = 'APPROVED';
+      }
+      if (mockState.controlTower.kpis.pending_approvals > 0) {
+        mockState.controlTower.kpis.pending_approvals -= 1;
+      }
     }
-    return HttpResponse.json({ data: mockState.goldenDeal });
+
+    if (id === 'deal_d1024_acme') {
+      mockState.goldenDeal = ws;
+    }
+    return HttpResponse.json({ data: ws });
+  }),
+
+  http.post('*/api/v1/deals/:id/approval/reject', async ({ params, request }) => {
+    const id = String(params.id);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const ws = mockState.getOrCreateWorkspace(id);
+    const reason = body?.reason || 'Quotation rejected';
+
+    ws.approval.state = 'REJECTED';
+    ws.deal.approval_state = 'REJECTED';
+    ws.deal.status = 'CANCELLED';
+    ws.approval.can_decide = false;
+    ws.timeline.unshift({
+      id: `t_${Date.now()}`,
+      event_type: 'REJECTED',
+      actor_name: 'Approver',
+      actor_role: 'SALES_MANAGER',
+      reason,
+      created_at: new Date().toISOString(),
+      summary: 'Quotation rejected by governance',
+    });
+    ws.next_best_action = {
+      type: 'REDUCE_DISCOUNT',
+      priority: 1,
+      title: 'Quotation Rejected',
+      explanation: reason,
+      cta_endpoint: '/quotations',
+    };
+
+    const app = mockState.approvals.find((a) => a.id === id);
+    if (app) {
+      app.status = 'REJECTED' as any;
+    }
+    const d = mockState.deals.find((x) => x.id === id);
+    if (d) {
+      d.status = 'REJECTED' as any;
+      d.approval_state = 'REJECTED';
+    }
+    if (mockState.controlTower.kpis.pending_approvals > 0) {
+      mockState.controlTower.kpis.pending_approvals -= 1;
+    }
+
+    if (id === 'deal_d1024_acme') {
+      mockState.goldenDeal = ws;
+    }
+    return HttpResponse.json({ data: ws });
+  }),
+
+  http.post('*/api/v1/deals/:id/approval/return', async ({ params, request }) => {
+    const id = String(params.id);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const ws = mockState.getOrCreateWorkspace(id);
+    const reason = body?.reason || 'Quotation returned for revision';
+
+    ws.approval.state = 'RETURNED';
+    ws.deal.approval_state = 'RETURNED';
+    ws.deal.status = 'DRAFT';
+    ws.approval.can_decide = false;
+    ws.timeline.unshift({
+      id: `t_${Date.now()}`,
+      event_type: 'RETURNED',
+      actor_name: 'Approver',
+      actor_role: 'SALES_MANAGER',
+      reason,
+      created_at: new Date().toISOString(),
+      summary: 'Returned to sales representative for revision',
+    });
+    ws.next_best_action = {
+      type: 'RESTORE_MARGIN',
+      priority: 1,
+      title: 'Quotation Returned for Revision',
+      explanation: reason,
+      cta_endpoint: `/quotations/${id}`,
+    };
+
+    const app = mockState.approvals.find((a) => a.id === id);
+    if (app) {
+      app.status = 'RETURNED' as any;
+    }
+    const d = mockState.deals.find((x) => x.id === id);
+    if (d) {
+      d.status = 'DRAFT';
+      d.approval_state = 'RETURNED';
+    }
+    if (mockState.controlTower.kpis.pending_approvals > 0) {
+      mockState.controlTower.kpis.pending_approvals -= 1;
+    }
+
+    if (id === 'deal_d1024_acme') {
+      mockState.goldenDeal = ws;
+    }
+    return HttpResponse.json({ data: ws });
+  }),
+
+  http.post('*/api/v1/deals/:id/approval/escalate', async ({ params, request }) => {
+    const id = String(params.id);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const ws = mockState.getOrCreateWorkspace(id);
+    const reason = body?.reason || 'Escalated to Executive Authority';
+
+    ws.timeline.unshift({
+      id: `t_${Date.now()}`,
+      event_type: 'ESCALATED',
+      actor_name: 'Approver',
+      actor_role: 'SALES_MANAGER',
+      reason,
+      created_at: new Date().toISOString(),
+      summary: 'Escalated to Executive Review / VP of Sales',
+    });
+    ws.next_best_action = {
+      type: 'AWAITING_APPROVER',
+      priority: 1,
+      title: 'Escalated to Executive Leadership',
+      explanation: reason,
+      cta_endpoint: `/approvals/${id}`,
+    };
+
+    const app = mockState.approvals.find((a) => a.id === id);
+    if (app) {
+      app.stage = 'VP / Executive';
+      app.assigned_to = 'Executive Review Committee';
+    }
+
+    if (id === 'deal_d1024_acme') {
+      mockState.goldenDeal = ws;
+    }
+    return HttpResponse.json({ data: ws });
+  }),
+
+  http.post('*/api/v1/deals/:id/submit', async ({ params }) => {
+    const id = String(params.id);
+    const ws = mockState.getOrCreateWorkspace(id);
+    ws.deal.status = 'DRAFT';
+    ws.deal.approval_state = 'PENDING_MANAGER';
+    ws.approval.state = 'PENDING_MANAGER';
+    ws.approval.can_decide = true;
+    ws.timeline.unshift({
+      id: `t_${Date.now()}`,
+      event_type: 'SUBMITTED',
+      actor_name: 'Sales Rep One',
+      actor_role: 'SALES_REP',
+      reason: 'Quotation submitted for governance review',
+      created_at: new Date().toISOString(),
+      summary: 'Submitted for multi-tier approval',
+    });
+    const d = mockState.deals.find((x) => x.id === id);
+    if (d) {
+      d.status = 'PENDING_APPROVAL' as any;
+      d.approval_state = 'PENDING_MANAGER';
+    }
+    if (id === 'deal_d1024_acme') {
+      mockState.goldenDeal = ws;
+    }
+    return HttpResponse.json({ data: ws });
+  }),
+
+  http.post('*/api/v1/deals/:id/cancel', async ({ params, request }) => {
+    const id = String(params.id);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const ws = mockState.getOrCreateWorkspace(id);
+    ws.deal.status = 'CANCELLED';
+    ws.deal.approval_state = 'REJECTED';
+    ws.approval.state = 'REJECTED';
+    ws.approval.can_decide = false;
+    ws.timeline.unshift({
+      id: `t_${Date.now()}`,
+      event_type: 'CANCELLED',
+      actor_name: 'Sales Rep',
+      actor_role: 'SALES_REP',
+      reason: body?.reason || 'Quotation cancelled',
+      created_at: new Date().toISOString(),
+      summary: 'Quotation cancelled',
+    });
+    const d = mockState.deals.find((x) => x.id === id);
+    if (d) {
+      d.status = 'CANCELLED';
+      d.approval_state = 'REJECTED';
+    }
+    if (id === 'deal_d1024_acme') {
+      mockState.goldenDeal = ws;
+    }
+    return HttpResponse.json({ data: ws });
   }),
 
   http.post('*/api/v1/deals/:id/send', () => {
@@ -453,10 +653,19 @@ export const handlers = [
   }),
 
   // Internal Confirm (Once re-approved)
-  http.post('*/api/v1/deals/:id/confirm', () => {
-    mockState.goldenDeal.deal.status = 'CONFIRMED';
-    mockState.goldenDeal.deal.confirmed_at = new Date().toISOString();
-    return HttpResponse.json({ data: mockState.goldenDeal });
+  http.post('*/api/v1/deals/:id/confirm', ({ params }) => {
+    const id = String(params.id);
+    const ws = mockState.getOrCreateWorkspace(id);
+    ws.deal.status = 'CONFIRMED';
+    ws.deal.confirmed_at = new Date().toISOString();
+    const d = mockState.deals.find((x) => x.id === id);
+    if (d) {
+      d.status = 'CONFIRMED';
+    }
+    if (id === 'deal_d1024_acme') {
+      mockState.goldenDeal = ws;
+    }
+    return HttpResponse.json({ data: ws });
   }),
 
   // Portal Deal Detail (strictly whitelisted)

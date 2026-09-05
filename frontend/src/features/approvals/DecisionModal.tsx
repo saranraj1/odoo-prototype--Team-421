@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -9,6 +9,7 @@ interface DecisionModalProps {
   decisionType: 'APPROVE' | 'REJECT' | 'RETURN' | 'ESCALATE';
   onConfirm: (reason?: string) => void;
   isLoading?: boolean;
+  errorMessage?: string | null;
 }
 
 export const DecisionModal: React.FC<DecisionModalProps> = ({
@@ -17,9 +18,19 @@ export const DecisionModal: React.FC<DecisionModalProps> = ({
   decisionType,
   onConfirm,
   isLoading = false,
+  errorMessage = null,
 }) => {
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) {
+      setReason('');
+      setError(null);
+    }
+  }, [open]);
+
+  const displayError = error || errorMessage;
 
   const isReasonRequired = decisionType === 'REJECT' || decisionType === 'RETURN';
 
@@ -74,7 +85,7 @@ export const DecisionModal: React.FC<DecisionModalProps> = ({
       }
     >
       <div className="space-y-3 py-2">
-        {error && <p className="text-xs text-danger font-medium">{error}</p>}
+        {displayError && <p className="text-xs text-danger font-medium">{displayError}</p>}
         <label className="text-xs font-semibold text-text-secondary block">
           Explanation Note {isReasonRequired ? '(Mandatory)' : '(Optional)'}
         </label>
