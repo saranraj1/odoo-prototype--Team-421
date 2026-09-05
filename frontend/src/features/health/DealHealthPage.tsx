@@ -107,10 +107,14 @@ export const DealHealthPage: React.FC = () => {
     },
   ];
 
+  const stalledCount = alerts.filter((a) => a.type === 'STALLED_DEAL').length;
+  const discountCount = alerts.filter((a) => a.type === 'DISCOUNT_ANOMALY').length;
+  const slippageCount = alerts.filter((a) => a.type === 'DELIVERY_SLIPPAGE').length;
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Deal Health &amp; Anomaly Dashboard"
+        title="Deal Health & Anomaly Dashboard"
         subtitle="Real-time flags for stalled deals and unusual discount patterns"
         actions={
           <Button
@@ -130,8 +134,8 @@ export const DealHealthPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KpiCard
           title="Stalled Deals"
-          value="1"
-          caption="1 quotation idle 7+ days"
+          value={stalledCount}
+          caption={`${stalledCount} quotation${stalledCount === 1 ? '' : 's'} idle 7+ days`}
           valueClassName="text-warning"
           className={selectedTypeFilter === 'STALLED_DEAL' ? 'ring-2 ring-brand' : ''}
           to="#"
@@ -139,8 +143,8 @@ export const DealHealthPage: React.FC = () => {
         />
         <KpiCard
           title="Discount Anomalies"
-          value="1"
-          caption="1 quotation exceeding rep baseline"
+          value={discountCount}
+          caption={`${discountCount} quotation${discountCount === 1 ? '' : 's'} exceeding rep baseline`}
           valueClassName="text-danger"
           className={selectedTypeFilter === 'DISCOUNT_ANOMALY' ? 'ring-2 ring-brand' : ''}
           to="#"
@@ -148,9 +152,9 @@ export const DealHealthPage: React.FC = () => {
         />
         <KpiCard
           title="Delivery Slippage"
-          value="0"
-          caption="0 promised dates at risk"
-          valueClassName="text-success"
+          value={slippageCount}
+          caption={`${slippageCount} promised date${slippageCount === 1 ? '' : 's'} at risk`}
+          valueClassName={slippageCount > 0 ? 'text-danger' : 'text-success'}
           className={selectedTypeFilter === 'DELIVERY_SLIPPAGE' ? 'ring-2 ring-brand' : ''}
           to="#"
           onClick={() => setSelectedTypeFilter(selectedTypeFilter === 'DELIVERY_SLIPPAGE' ? '' : 'DELIVERY_SLIPPAGE')}

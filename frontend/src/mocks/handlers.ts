@@ -163,28 +163,101 @@ export const handlers = [
       return HttpResponse.json({
         data: {
           columns: [
-            { status: 'DRAFT', items: [mockState.goldenDeal.deal] },
-            { status: 'PENDING_APPROVAL', items: [] },
-            { status: 'APPROVED', items: [] },
-            { status: 'UNDER_NEGOTIATION', items: [] },
-            { status: 'CONFIRMED', items: [] },
+            { status: 'DRAFT', items: mockState.deals.filter((d) => d.status === 'DRAFT') },
+            { status: 'PENDING_APPROVAL', items: mockState.deals.filter((d) => d.status === 'PENDING_APPROVAL') },
+            { status: 'APPROVED', items: mockState.deals.filter((d) => d.status === 'APPROVED') },
+            { status: 'UNDER_NEGOTIATION', items: mockState.deals.filter((d) => d.status === 'UNDER_NEGOTIATION') },
+            { status: 'CONFIRMED', items: mockState.deals.filter((d) => d.status === 'CONFIRMED') },
           ],
         },
       });
     }
 
+    const statusParam = url.searchParams.get('status');
+    const q = (url.searchParams.get('q') || '').toLowerCase();
+    let items = [...mockState.deals];
+    if (statusParam) {
+      const allowed = statusParam.split(',').map((s) => s.trim());
+      items = items.filter((d) => allowed.includes(d.status) || allowed.includes(d.approval_state));
+    }
+    if (q) {
+      items = items.filter(
+        (d) =>
+          d.reference.toLowerCase().includes(q) ||
+          d.partner_name_cache.toLowerCase().includes(q) ||
+          d.odoo_order_name.toLowerCase().includes(q)
+      );
+    }
+
     return HttpResponse.json({
       data: {
-        items: [mockState.goldenDeal.deal],
-        total: 1,
+        items,
+        total: items.length,
         page: 1,
         page_size: 20,
       },
     });
   }),
 
-  http.get('*/api/v1/deals/:id/workspace', () => {
+  http.get('*/api/v1/deals/:id/workspace', ({ params }) => {
+    const id = String(params.id);
+    if (id === 'deal_d1023_beta') {
+      const copy = JSON.parse(JSON.stringify(mockState.goldenDeal));
+      copy.deal.id = 'deal_d1023_beta';
+      copy.deal.reference = 'D-1023';
+      copy.deal.odoo_order_name = 'SO-2026-011';
+      copy.deal.current_risk_score = 29.7;
+      copy.deal.current_severity = 'MEDIUM';
+      copy.deal.health_status = 'AT_RISK';
+      copy.deal.amount_total_cache = 420000;
+      copy.customer.partner_id = 2;
+      copy.customer.name = 'Beta Industries';
+      copy.customer.tier_code = 'SILVER';
+      copy.risk.score = 29.7;
+      copy.risk.severity = 'MEDIUM';
+      return HttpResponse.json({ data: copy });
+    }
+    if (id === 'deal_d1021_delta') {
+      const copy = JSON.parse(JSON.stringify(mockState.goldenDeal));
+      copy.deal.id = 'deal_d1021_delta';
+      copy.deal.reference = 'D-1021';
+      copy.deal.odoo_order_name = 'SO-2026-009';
+      copy.deal.current_risk_score = 44.5;
+      copy.deal.current_severity = 'MEDIUM';
+      copy.deal.health_status = 'HEALTHY';
+      copy.deal.amount_total_cache = 780000;
+      copy.deal.approval_state = 'PENDING_FINANCE';
+      copy.approval.state = 'PENDING_FINANCE';
+      copy.customer.partner_id = 3;
+      copy.customer.name = 'Delta Systems Inc';
+      copy.customer.tier_code = 'PLATINUM';
+      copy.risk.score = 44.5;
+      copy.risk.severity = 'MEDIUM';
+      return HttpResponse.json({ data: copy });
+    }
     return HttpResponse.json({ data: mockState.goldenDeal });
+  }),
+
+  // Approvals List & Inbox
+  http.get('*/api/v1/approvals', ({ request }) => {
+    const url = new URL(request.url);
+    const statusParam = url.searchParams.get('status')?.toUpperCase();
+    const pendingParam = url.searchParams.get('pending');
+
+    let items = [...mockState.approvals];
+    if (statusParam && statusParam !== 'ALL') {
+      items = items.filter((a) => a.status === statusParam);
+    } else if (pendingParam === 'true') {
+      items = items.filter((a) => a.status === 'PENDING');
+    }
+
+    return HttpResponse.json({ data: items });
+  }),
+
+  http.get('*/api/v1/approvals/inbox', () => {
+    // Returns pending approvals
+    const items = mockState.approvals.filter((a) => a.status === 'PENDING');
+    return HttpResponse.json({ data: items });
   }),
 
   // Patch Line (e.g. Editing Setup Service discount)
@@ -458,5 +531,32 @@ export const handlers = [
   // Admin Outbox (for demo magic link retrieval)
   http.get('*/api/v1/admin/outbox', () => {
     return HttpResponse.json({ data: mockState.outbox });
+  }),
+
+  // Invoices List
+  http.get('*/api/v1/odoo/invoices', ({ request }) => {
+    const url = new URL(request.url);
+    const statusParam = url.searchParams.get('status')?.toLowerCase();
+    let items = [...mockState.invoices];
+    if (statusParam && statusParam !== 'all') {
+      items = items.filter((i) => i.status.toLowerCase() === statusParam);
+    }
+    return HttpResponse.json({ data: items });
+  }),
+
+  // Subscriptions List
+  http.get('*/api/v1/odoo/subscriptions', ({ request }) => {
+    const url = new URL(request.url);
+    const statusParam = url.searchParams.get('status')?.toUpperCase();
+    let items = [...mockState.subscriptions];
+    if (statusParam && statusParam !== 'ALL') {
+      items = items.filter((s) => s.status.toUpperCase() === statusParam);
+    }
+    return HttpResponse.json({ data: items });
+  }),
+
+  // Fulfillment Exceptions
+  http.get('*/api/v1/fulfillment/exceptions', () => {
+    return HttpResponse.json({ data: mockState.fulfillmentExceptions });
   }),
 ];

@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -12,12 +12,17 @@ export const InvoicesListPage: React.FC = () => {
   const navigate = useNavigate();
   const [filterState, setFilterState] = useState<'ALL' | 'UNPAID' | 'PAID'>('ALL');
 
+  const { data: allInvoices = [] } = useQuery({
+    queryKey: queryKeys.invoices.list({ status: 'ALL' }),
+    queryFn: () => billingApi.listInvoices({ status: 'ALL' }),
+  });
+
   const { data: invoicesData = [], isLoading } = useQuery({
     queryKey: queryKeys.invoices.list({ status: filterState }),
     queryFn: () => billingApi.listInvoices({ status: filterState }),
   });
 
-  const invoiceList = invoicesData.length > 0 ? invoicesData : [
+  const fallbackInvoices = [
     {
       id: 1042,
       number: 'INV-1042',
@@ -37,6 +42,18 @@ export const InvoicesListPage: React.FC = () => {
       due_date: '2026-09-01',
     },
   ];
+
+  const invoiceList = invoicesData.length > 0
+    ? invoicesData
+    : fallbackInvoices.filter((i) => {
+        if (filterState === 'UNPAID') return i.status.toLowerCase() === 'unpaid';
+        if (filterState === 'PAID') return i.status.toLowerCase() === 'paid';
+        return true;
+      });
+
+  const totalInvoices = allInvoices.length > 0 ? allInvoices : fallbackInvoices;
+  const unpaidCount = totalInvoices.filter((i) => i.status.toLowerCase() === 'unpaid').length;
+  const paidCount = totalInvoices.filter((i) => i.status.toLowerCase() === 'paid').length;
 
   const columns: ColumnDef<any>[] = [
     {
@@ -91,7 +108,7 @@ export const InvoicesListPage: React.FC = () => {
               : 'bg-surface text-text-muted border-border'
           }`}
         >
-          All
+          All ({totalInvoices.length})
         </button>
         <button
           type="button"
@@ -102,7 +119,7 @@ export const InvoicesListPage: React.FC = () => {
               : 'bg-surface text-text-muted border-border'
           }`}
         >
-          1 Unpaid
+          {unpaidCount} Unpaid
         </button>
         <button
           type="button"
@@ -113,7 +130,7 @@ export const InvoicesListPage: React.FC = () => {
               : 'bg-surface text-text-muted border-border'
           }`}
         >
-          1 Paid
+          {paidCount} Paid
         </button>
       </div>
 

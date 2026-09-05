@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -29,9 +29,9 @@ export const SalesDashboardPage: React.FC = () => {
     queryFn: () => notificationsApi.list(false),
   });
 
-  const openDealsCount = dealsData?.total ?? 1;
-  const pendingApprovals = ctData?.kpis.pending_approvals ?? 1;
-  const atRiskCount = ctData?.kpis.at_risk_count ?? 1;
+  const openDealsCount = dealsData?.total ?? 4;
+  const pendingApprovals = ctData?.kpis.pending_approvals ?? 3;
+  const atRiskCount = ctData?.kpis.at_risk_count ?? 2;
 
   return (
     <div className="space-y-6">

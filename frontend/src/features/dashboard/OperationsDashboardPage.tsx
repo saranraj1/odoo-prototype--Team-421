@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -43,19 +43,30 @@ export const OperationsDashboardPage: React.FC = () => {
     {
       key: 'risk',
       header: 'Risk Score',
-      render: (item) => <RiskBadge score={item.current_risk_score ?? 56} severity="HIGH" />,
+      render: (item) => (
+        <RiskBadge
+          score={item.risk_score ?? item.current_risk_score ?? 56}
+          severity={item.severity ?? 'HIGH'}
+        />
+      ),
     },
     {
       key: 'amount',
       header: 'Amount',
       render: (item) => (
-        <span className="tabular-nums">{formatMoney(item.amount_total_cache ?? 558000)}</span>
+        <span className="tabular-nums">
+          {formatMoney(item.amount ?? item.amount_total_cache ?? 558000)}
+        </span>
       ),
     },
     {
       key: 'stage',
       header: 'Approval Stage',
-      render: () => <span className="text-warning font-medium">Pending: Finance</span>,
+      render: (item) => (
+        <span className="text-warning font-medium">
+          {item.stage ? `Pending: ${item.stage}` : 'Pending: Finance'}
+        </span>
+      ),
     },
   ];
 

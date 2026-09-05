@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -14,12 +14,17 @@ export const SubscriptionsListPage: React.FC = () => {
   const navigate = useNavigate();
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'CANCELLED'>('ALL');
 
+  const { data: allSubs = [] } = useQuery({
+    queryKey: queryKeys.subscriptions.list({ status: 'ALL' }),
+    queryFn: () => billingApi.listSubscriptions({ status: 'ALL' }),
+  });
+
   const { data: subsData = [], isLoading } = useQuery({
     queryKey: queryKeys.subscriptions.list({ status: filterStatus }),
     queryFn: () => billingApi.listSubscriptions({ status: filterStatus }),
   });
 
-  const subsList = subsData.length > 0 ? subsData : [
+  const fallbackSubs = [
     {
       id: 101,
       customer: 'Acme Corp',
@@ -39,6 +44,18 @@ export const SubscriptionsListPage: React.FC = () => {
       status: 'Active',
     },
   ];
+
+  const subsList = subsData.length > 0
+    ? subsData
+    : fallbackSubs.filter((s) => {
+        if (filterStatus === 'ACTIVE') return s.status.toLowerCase() === 'active';
+        if (filterStatus === 'PAUSED') return s.status.toLowerCase() === 'paused';
+        return true;
+      });
+
+  const totalSubs = allSubs.length > 0 ? allSubs : fallbackSubs;
+  const activeCount = totalSubs.filter((s) => s.status.toLowerCase() === 'active').length;
+  const pausedCount = totalSubs.filter((s) => s.status.toLowerCase() === 'paused').length;
 
   const columns: ColumnDef<any>[] = [
     { key: 'customer', header: 'Customer', render: (s) => <span className="font-semibold text-text-primary">{s.customer}</span> },
@@ -84,7 +101,7 @@ export const SubscriptionsListPage: React.FC = () => {
               : 'bg-surface text-text-muted border-border'
           }`}
         >
-          All
+          All ({totalSubs.length})
         </button>
         <button
           type="button"
@@ -95,7 +112,7 @@ export const SubscriptionsListPage: React.FC = () => {
               : 'bg-surface text-text-muted border-border'
           }`}
         >
-          2 Active
+          {activeCount} Active
         </button>
         <button
           type="button"
@@ -106,7 +123,7 @@ export const SubscriptionsListPage: React.FC = () => {
               : 'bg-surface text-text-muted border-border'
           }`}
         >
-          0 Paused
+          {pausedCount} Paused
         </button>
       </div>
 
