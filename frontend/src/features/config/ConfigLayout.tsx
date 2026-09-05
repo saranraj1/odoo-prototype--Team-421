@@ -11,15 +11,21 @@ import { useMutation } from '@tanstack/react-query';
 import { Check, Sliders, ShieldCheck, Box, Settings, Users, UserPlus, KeyRound, Edit2, Trash2, Eye, EyeOff } from 'lucide-react';
 import { getStoredUsers, saveStoredUsers, type UserAccountData } from '@/mocks/fixtures/users';
 import type { UserRole } from '@/lib/rbac';
+import { useAuthStore } from '@/features/auth/authStore';
 
 export const ConfigLayout: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'users' | 'tiers' | 'pricelists' | 'routing' | 'warehouses' | 'subscriptions' | 'upsell' | 'system'>('users');
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'ADMIN';
+
+  const [activeTab, setActiveTab] = useState<'users' | 'tiers' | 'pricelists' | 'routing' | 'warehouses' | 'subscriptions' | 'upsell' | 'system'>(
+    isAdmin ? 'users' : 'tiers'
+  );
   const [managerThreshold, setManagerThreshold] = useState(20);
   const [financeThreshold, setFinanceThreshold] = useState(50);
   const [singleLinePts, setSingleLinePts] = useState(8);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // User Management State
+  // User Management State (Restricted strictly to System Administrator)
   const [userList, setUserList] = useState<UserAccountData[]>([]);
   const [showPasswords, setShowPasswords] = useState<Record<number, boolean>>({});
   const [createUserOpen, setCreateUserOpen] = useState(false);
@@ -42,9 +48,18 @@ export const ConfigLayout: React.FC = () => {
     setUserList(Object.values(raw));
   };
 
+  // Guard activeTab if user role changes or non-admin attempts to view users tab
   useEffect(() => {
-    loadUsers();
-  }, []);
+    if (!isAdmin && activeTab === 'users') {
+      setActiveTab('tiers');
+    }
+  }, [isAdmin, activeTab]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadUsers();
+    }
+  }, [isAdmin]);
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,11 +147,15 @@ export const ConfigLayout: React.FC = () => {
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-16">
       <PageHeader
-        title="Platform Governance & Administration"
-        subtitle="Manage user credentials, calibrate approval thresholds, and configure policy parameters"
+        title={isAdmin ? "Platform Governance & Administration" : "Governance & Policy Configuration"}
+        subtitle={
+          isAdmin
+            ? "Manage user credentials, calibrate approval thresholds, and configure policy parameters"
+            : "Calibrate approval thresholds, discount rules, and configure governance policy parameters"
+        }
         actions={
           <div className="flex items-center gap-2">
-            {activeTab === 'users' ? (
+            {isAdmin && activeTab === 'users' ? (
               <Button
                 size="sm"
                 variant="default"
@@ -170,16 +189,18 @@ export const ConfigLayout: React.FC = () => {
 
       {/* Configuration Tabs */}
       <div className="flex border-b border-border space-x-1 overflow-x-auto pb-px">
-        <button
-          type="button"
-          onClick={() => setActiveTab('users')}
-          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
-            activeTab === 'users' ? 'border-brand text-brand' : 'border-transparent text-text-muted hover:text-text-primary'
-          }`}
-        >
-          <Users className="h-3.5 w-3.5" />
-          Users &amp; Credentials
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('users')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
+              activeTab === 'users' ? 'border-brand text-brand' : 'border-transparent text-text-muted hover:text-text-primary'
+            }`}
+          >
+            <Users className="h-3.5 w-3.5" />
+            Users &amp; Credentials
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setActiveTab('tiers')}
@@ -252,8 +273,8 @@ export const ConfigLayout: React.FC = () => {
         </button>
       </div>
 
-      {/* Tab: Users & Credentials */}
-      {activeTab === 'users' && (
+      {/* Tab: Users & Credentials - STRICTLY ADMIN ONLY */}
+      {isAdmin && activeTab === 'users' && (
         <div className="space-y-6">
           <Card className="border-border bg-surface shadow-xs">
             <CardHeader className="pb-3 border-b border-border">
@@ -612,13 +633,15 @@ export const ConfigLayout: React.FC = () => {
         </div>
       )}
 
-      {/* Dialog: Create New User */}
-      <Dialog
-        open={createUserOpen}
-        onOpenChange={setCreateUserOpen}
-        title="Provision New User Account"
-        description="Create a new team member or manager account with credentials and role assignment."
-      >
+      {/* Dialogs: Create & Edit User - STRICTLY ADMIN ONLY */}
+      {isAdmin && (
+        <>
+          <Dialog
+            open={createUserOpen}
+            onOpenChange={setCreateUserOpen}
+            title="Provision New User Account"
+            description="Create a new team member or manager account with credentials and role assignment."
+          >
         <form onSubmit={handleCreateUser} className="space-y-4 pt-2">
           <div className="space-y-1.5">
             <label htmlFor="create-user-name" className="text-xs font-semibold text-text-secondary">
@@ -753,6 +776,8 @@ export const ConfigLayout: React.FC = () => {
           </div>
         </form>
       </Dialog>
+        </>
+      )}
     </div>
   );
 };
