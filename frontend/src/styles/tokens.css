@@ -1,0 +1,26 @@
+:root {
+  --bg-app: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #F1F5F9;
+  --border: #E2E8F0;
+  --border-strong: #CBD5E1;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
+  --brand: #0284C7;
+  --brand-ink: #FFFFFF;
+  --nav-active-bg: #0369A1;
+  --success: #16A34A;
+  --warning: #D97706;
+  --danger: #DC2626;
+  --info: #0284C7;
+  --note-bg: #FEF3C7;
+  --note-border: #FCD34D;
+  --note-text: #92400E;
+  --risk-low: #16A34A;
+  --risk-medium: #D97706;
+  --risk-high: #DC2626;
+  --health-healthy: #16A34A;
+  --health-watch: #D97706;
+  --health-at-risk: #DC2626;
+}
