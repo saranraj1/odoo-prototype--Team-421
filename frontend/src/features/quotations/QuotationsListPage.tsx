@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -96,26 +96,35 @@ export const QuotationsListPage: React.FC = () => {
 
   const deals = listData?.items || [];
 
+  const getDealKanbanStatus = (d: any): string => {
+    if (d.status === 'CONFIRMED' || d.status === 'IN_FULFILLMENT') return 'CONFIRMED';
+    if (d.status === 'UNDER_NEGOTIATION' || d.approval_state === 'UNDER_NEGOTIATION') return 'UNDER_NEGOTIATION';
+    if (d.status === 'APPROVED' || d.approval_state === 'APPROVED') return 'APPROVED';
+    if (d.status === 'DRAFT' || d.approval_state === 'DRAFT' || d.approval_state === 'NOT_EVALUATED') return 'DRAFT';
+    if (d.status === 'PENDING_APPROVAL' || d.approval_state?.startsWith('PENDING_')) return 'PENDING_APPROVAL';
+    return d.status || 'DRAFT';
+  };
+
   const kanbanColumns = [
     {
       status: 'DRAFT',
-      items: deals.filter((d) => d.status === 'DRAFT' && d.approval_state === 'NOT_EVALUATED'),
+      items: deals.filter((d) => getDealKanbanStatus(d) === 'DRAFT'),
     },
     {
       status: 'PENDING_APPROVAL',
-      items: deals.filter((d) => d.approval_state?.startsWith('PENDING_') || d.current_risk_score > 0),
+      items: deals.filter((d) => getDealKanbanStatus(d) === 'PENDING_APPROVAL'),
     },
     {
       status: 'APPROVED',
-      items: deals.filter((d) => d.approval_state === 'APPROVED'),
+      items: deals.filter((d) => getDealKanbanStatus(d) === 'APPROVED'),
     },
     {
       status: 'UNDER_NEGOTIATION',
-      items: deals.filter((d) => d.status === 'UNDER_NEGOTIATION'),
+      items: deals.filter((d) => getDealKanbanStatus(d) === 'UNDER_NEGOTIATION'),
     },
     {
       status: 'CONFIRMED',
-      items: deals.filter((d) => d.status === 'CONFIRMED' || d.status === 'IN_FULFILLMENT'),
+      items: deals.filter((d) => getDealKanbanStatus(d) === 'CONFIRMED'),
     },
   ];
 
@@ -176,7 +185,8 @@ export const QuotationsListPage: React.FC = () => {
         >
           <option value="">All Statuses</option>
           <option value="DRAFT">Draft</option>
-          <option value="SENT">Sent</option>
+          <option value="PENDING_APPROVAL">Pending Approval</option>
+          <option value="APPROVED">Approved</option>
           <option value="UNDER_NEGOTIATION">Under Negotiation</option>
           <option value="CONFIRMED">Confirmed</option>
         </Select>
