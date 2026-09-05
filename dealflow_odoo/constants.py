@@ -3,6 +3,17 @@
 All parallel agents MUST conform to these constants.
 """
 
+import os
+
+# ---------------------------------------------------------------------------
+# Feature Flags
+# ---------------------------------------------------------------------------
+
+# Set DEALFLOW_DB_ENABLED=false to disable all PostgreSQL Decision Engine writes.
+# Useful for running Odoo in demo mode without a live DealFlow DB.
+DEALFLOW_DB_ENABLED: bool = os.getenv("DEALFLOW_DB_ENABLED", "true").lower() not in ("0", "false", "no")
+
+
 # DealFlow Approval States on Sale Order
 APPROVAL_STATE_DRAFT = "draft"
 APPROVAL_STATE_PENDING = "pending_approval"

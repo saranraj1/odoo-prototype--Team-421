@@ -7,6 +7,9 @@ that mirrors Odoo models, relations, environment, security, and transactions.
 
 from __future__ import annotations
 
+import os
+os.environ["DEALFLOW_DB_ENABLED"] = "false"
+
 import copy
 import json
 from dataclasses import asdict

@@ -5,3 +5,5 @@ from . import sale_order_line
 from . import stock_picking
 from . import account_move
 from . import dealflow_negotiation
+from . import res_users
+

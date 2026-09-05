@@ -76,6 +76,12 @@ try:
 except ImportError:
     AccountingAdapter = None
 
+# PostgreSQL Decision Engine bridge (graceful — never crashes Odoo)
+try:
+    from dealflow_odoo.services.dealflow_repository_bridge import DealFlowRepositoryBridge
+except Exception:  # pragma: no cover
+    DealFlowRepositoryBridge = None  # type: ignore[assignment,misc]
+
 logger = logging.getLogger("dealflow.integration_service")
 
 
@@ -150,6 +156,16 @@ class OdooIntegrationService:
         self._audit_logs: List[Dict[str, Any]] = []
         self._audit_lock = threading.Lock()
 
+        # Decision Engine DB bridge (may be disabled / unavailable)
+        if DealFlowRepositoryBridge is not None:
+            try:
+                self.db_bridge: Optional[Any] = DealFlowRepositoryBridge()
+            except Exception as _exc:
+                logger.warning("[IntegrationService] DB bridge init failed: %s", _exc)
+                self.db_bridge = None
+        else:
+            self.db_bridge = None
+
     # -------------------------------------------------------------------------
     # Structured Audit Logging & Error Translation Boundary
     # -------------------------------------------------------------------------
@@ -165,7 +181,7 @@ class OdooIntegrationService:
         failure_reason: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Record structured audit log entry in memory and logging system."""
+        """Record structured audit log entry in memory, logging system, and Decision Engine DB."""
         entry = {
             "operation": operation,
             "dealflow_deal_id": dealflow_deal_id,
@@ -193,6 +209,20 @@ class OdooIntegrationService:
             failure_reason,
             extra=entry,
         )
+
+        # Persist to PostgreSQL Decision Engine (non-blocking, never raises)
+        if self.db_bridge:
+            self.db_bridge.append_audit_event(
+                operation=operation,
+                deal_id=dealflow_deal_id,
+                actor=entry["actor"],
+                actor_id=self.actor_id,
+                result=result,
+                record_id=record_id,
+                details=details or {},
+                failure_reason=failure_reason,
+            )
+
         return entry
 
     @contextmanager
@@ -574,7 +604,7 @@ class OdooIntegrationService:
             deal_id = getattr(order, "dealflow_deal_id", None)
             currency_name = order.currency_id.name if hasattr(order, "currency_id") and order.currency_id else "USD"
 
-            return DealContextDTO(
+            deal_context = DealContextDTO(
                 deal_id=deal_id,
                 order_id=order.id,
                 order_name=order.name,
@@ -598,6 +628,33 @@ class OdooIntegrationService:
                 dealflow_health_status=getattr(order, "dealflow_health_status", "healthy"),
                 dealflow_locked=bool(getattr(order, "dealflow_locked", False)),
             )
+
+            # ── Decision Engine DB sync ──────────────────────────────────────
+            if self.db_bridge:
+                _customer_tier = getattr(customer_dto, "tier", "STANDARD")
+                self.db_bridge.sync_deal_from_odoo(
+                    order_dict={
+                        "id": order.id,
+                        "dealflow_deal_id": deal_id,
+                        "partner_id": order.partner_id.id,
+                        "state": order.state,
+                        "dealflow_approval_state": deal_context.dealflow_approval_state,
+                        "dealflow_health_status": deal_context.dealflow_health_status,
+                        "dealflow_risk_score": deal_context.dealflow_risk_score,
+                        "amount_total": deal_context.amount_total,
+                        "total_margin": deal_context.total_margin,
+                        "margin_percent": deal_context.margin_percent,
+                        "blended_discount": deal_context.blended_discount,
+                        "has_recurring_lines": deal_context.has_recurring_lines,
+                        "mrr": deal_context.mrr,
+                        "arr": deal_context.arr,
+                        "currency": deal_context.currency,
+                    },
+                    customer_tier=_customer_tier,
+                    owner_user_id=self.actor_id,
+                )
+
+            return deal_context
 
     def update_order(self, order_id: int, values: Dict[str, Any]) -> Dict[str, Any]:
         """Update fields or lines on a sale order.
@@ -698,6 +755,24 @@ class OdooIntegrationService:
             else:
                 raise OdooExecutionError("Odoo environment or SalesAdapter is required")
 
+            # ── Decision Engine DB sync ──────────────────────────────────────
+            if self.db_bridge and deal_id:
+                self.db_bridge.update_deal_status(
+                    deal_id=deal_id,
+                    status="APPROVED",
+                    approval_state=changes.get("dealflow_approval_state", APPROVAL_STATE_APPROVED).upper(),
+                    risk_score=float(changes.get("dealflow_risk_score", 0.0)),
+                )
+                if changes.get("_approval_request_id") and changes.get("_approval_action"):
+                    self.db_bridge.record_approval_action(
+                        request_id=changes["_approval_request_id"],
+                        action=changes.get("_approval_action", "APPROVED"),
+                        actor_user_id=self.actor_id or 0,
+                        actor_name=self.actor,
+                        note=changes.get("_approval_note"),
+                        conditions=changes.get("_approval_conditions"),
+                    )
+
             self.event_dispatcher.dispatch(
                 event_type=EVENT_ORDER_APPROVED,
                 record_id=order_id,
@@ -786,6 +861,17 @@ class OdooIntegrationService:
                 raise OdooExecutionError("Odoo environment or SalesAdapter is required")
 
             deal_id = ctx.get("dealflow_deal_id") or (res.get("dealflow_deal_id") if isinstance(res, dict) else None)
+
+            # ── Decision Engine DB sync ──────────────────────────────────────
+            if self.db_bridge and deal_id:
+                self.db_bridge.update_deal_status(
+                    deal_id=deal_id,
+                    status="APPROVED",
+                    approval_state="APPROVED",
+                    risk_score=float(getattr(res, "get", lambda k, d=None: d)("dealflow_risk_score") or 0.0)
+                    if isinstance(res, dict) else 0.0,
+                )
+
             self.event_dispatcher.dispatch(
                 event_type=EVENT_ORDER_CONFIRMED,
                 record_id=order_id,
@@ -899,6 +985,10 @@ class OdooIntegrationService:
                 }
             else:
                 raise OdooExecutionError("Odoo environment or InventoryAdapter is required")
+
+            # ── Decision Engine DB sync ──────────────────────────────────────
+            if self.db_bridge and deal_id:
+                self.db_bridge.record_fulfillment_plan(deal_id=deal_id, plan=plan)
 
             self.event_dispatcher.dispatch(
                 event_type=EVENT_STOCK_CHANGED,
@@ -1125,6 +1215,20 @@ class OdooIntegrationService:
                 raise OdooExecutionError("Odoo environment or SalesAdapter is required")
 
             deal_id = getattr(order, "dealflow_deal_id", None) if self.env else None
+
+            # ── Decision Engine DB sync ──────────────────────────────────────
+            if self.db_bridge and deal_id:
+                self.db_bridge.record_negotiation(
+                    deal_id=deal_id,
+                    customer_id=customer_id,
+                    negotiation_dict={
+                        "requested_discount": changes_dict.get("requested_discount", 0.0),
+                        "requested_terms": changes_dict.get("requested_terms"),
+                        "customer_note": changes_dict.get("customer_note"),
+                        "line_changes": changes_dict.get("line_changes", []),
+                    },
+                )
+
             self.event_dispatcher.dispatch(
                 event_type=EVENT_CUSTOMER_NEGOTIATION_SUBMITTED,
                 record_id=order_id,

@@ -29,6 +29,7 @@ DealFlow360 — Intelligent Deal Governance & Transactional Execution Engine
         'security/ir.model.access.csv',
         'data/seed_data.xml',
         'views/sale_order_views.xml',
+        'views/res_users_views.xml',
     ],
     'installable': True,
     'application': True,

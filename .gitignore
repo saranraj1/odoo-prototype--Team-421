@@ -16,6 +16,12 @@ venv/
 ENV/
 env/
 
+# Environment files with secrets & configs
+.env
+.env.local
+*.bak
+*.tmp
+
 # Hackathon / environment artifacts
 .reentry/
 
@@ -26,16 +32,17 @@ odoo.conf
 filestore/
 sessions/
 
-# IDE / Editor files
+# IDE & OS files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.DS_Store
+Thumbs.db
 
 # Local PostgreSQL & Downloads
 pgsql/
 pg_data/
 *.zip
 *.bin
-
