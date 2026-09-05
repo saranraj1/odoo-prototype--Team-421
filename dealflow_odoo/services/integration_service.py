@@ -36,6 +36,7 @@ from dealflow_odoo.schemas import (
     DealContextDTO,
     DealFlowIntegrationError,
     FulfillmentPlanDTO,
+    FulfillmentSplitItem,
     InvalidStateError,
     NegotiationRequestDTO,
     NotFoundError,
@@ -149,7 +150,7 @@ class OdooIntegrationService:
         if accounting_adapter is not None:
             self.accounting_adapter = accounting_adapter
         elif AccountingAdapter is not None and env is not None:
-            self.accounting_adapter = AccountingAdapter(env)
+            self.accounting_adapter = AccountingAdapter(env=env)
         else:
             self.accounting_adapter = None
 
@@ -966,6 +967,34 @@ class OdooIntegrationService:
         Returns:
             Dict describing the applied fulfillment allocations.
         """
+        if isinstance(plan, dict):
+            raw_allocs = plan.get("allocations") or plan.get("lines") or []
+            split_items: List[FulfillmentSplitItem] = []
+            for item in raw_allocs:
+                if isinstance(item, dict):
+                    split_items.append(
+                        FulfillmentSplitItem(
+                            product_id=int(item.get("product_id", 0)),
+                            warehouse_id=int(item.get("warehouse_id", 0)),
+                            warehouse_name=str(item.get("warehouse_name", f"Warehouse {item.get('warehouse_id', '')}")),
+                            quantity=float(item.get("quantity", item.get("allocated_qty", 0.0))),
+                        )
+                    )
+                elif isinstance(item, FulfillmentSplitItem):
+                    split_items.append(item)
+
+            plan_dto = FulfillmentPlanDTO(
+                deal_id=str(plan.get("deal_id") or f"DEAL-{order_id}"),
+                order_id=int(plan.get("order_id") or order_id),
+                allocations=split_items,
+                notes=plan.get("notes"),
+                batch_id=plan.get("batch_id"),
+                requested_qty=float(plan.get("requested_qty")) if plan.get("requested_qty") is not None else None,
+            )
+            plan = plan_dto
+        elif is_dataclass(plan) and getattr(plan, "order_id", 0) == 0:
+            plan.order_id = order_id
+
         plan_dict = asdict(plan) if is_dataclass(plan) else dict(plan)
         deal_id = plan_dict.get("deal_id")
 

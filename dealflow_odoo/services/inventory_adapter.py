@@ -462,6 +462,32 @@ class InventoryAdapter:
                 details={"order_id": order_id},
             )
 
+        if isinstance(fulfillment_plan, dict):
+            raw_allocs = fulfillment_plan.get("allocations") or fulfillment_plan.get("lines") or []
+            split_items = []
+            for item in raw_allocs:
+                if isinstance(item, dict):
+                    split_items.append(
+                        FulfillmentSplitItem(
+                            product_id=int(item.get("product_id", 0)),
+                            warehouse_id=int(item.get("warehouse_id", 0)),
+                            warehouse_name=str(item.get("warehouse_name", f"Warehouse {item.get('warehouse_id', '')}")),
+                            quantity=float(item.get("quantity", item.get("allocated_qty", 0.0))),
+                        )
+                    )
+                elif isinstance(item, FulfillmentSplitItem):
+                    split_items.append(item)
+            fulfillment_plan = FulfillmentPlanDTO(
+                deal_id=fulfillment_plan.get("deal_id"),
+                order_id=int(fulfillment_plan.get("order_id") or order_id),
+                allocations=split_items,
+                notes=fulfillment_plan.get("notes"),
+                batch_id=fulfillment_plan.get("batch_id"),
+                requested_qty=float(fulfillment_plan.get("requested_qty")) if fulfillment_plan.get("requested_qty") is not None else None,
+            )
+        elif isinstance(fulfillment_plan, FulfillmentPlanDTO) and (not fulfillment_plan.order_id or fulfillment_plan.order_id == 0):
+            fulfillment_plan.order_id = order_id
+
         if not isinstance(fulfillment_plan, FulfillmentPlanDTO):
             raise ValidationError(
                 "fulfillment_plan must be an instance of FulfillmentPlanDTO.",
