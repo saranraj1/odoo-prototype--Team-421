@@ -34,12 +34,24 @@ export const DealHealthPage: React.FC = () => {
     },
   });
 
+  const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
+
   const actionMutation = useMutation({
     mutationFn: ({ id, action, msg }: { id: string; action: 'NUDGE' | 'ESCALATE'; msg?: string }) =>
       healthApi.actOnAlert(id, { action, message: msg }),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.alerts.list({}) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unread });
+      queryClient.invalidateQueries({ queryKey: queryKeys.controlTower.summary });
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list({}) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deals.list({}) });
       setActionModalOpen(false);
+
+      const targetText = variables.action === 'NUDGE'
+        ? 'Dispatched Nudge to Sales Representative (Inbox & Action Queue updated)'
+        : 'Escalated to Sales Management & Finance Director (Approvals Queue updated)';
+      setFeedbackBanner(targetText);
+      setTimeout(() => setFeedbackBanner(null), 6000);
     },
   });
 
@@ -65,7 +77,16 @@ export const DealHealthPage: React.FC = () => {
     {
       key: 'title',
       header: 'Identified Issue',
-      render: (item) => <span className="font-medium text-text-primary">{item.title}</span>,
+      render: (item) => (
+        <div>
+          <span className="font-medium text-text-primary">{item.title}</span>
+          {item.last_action && (
+            <p className="text-[10px] text-brand font-medium mt-0.5">
+              ↳ {item.last_action}
+            </p>
+          )}
+        </div>
+      ),
     },
     {
       key: 'created_at',
@@ -77,7 +98,21 @@ export const DealHealthPage: React.FC = () => {
     {
       key: 'health_status',
       header: 'Health Status',
-      render: (item) => <HealthBadge status={item.health_status} />,
+      render: (item) => (
+        <div className="flex flex-col gap-1 items-start">
+          <HealthBadge status={item.health_status} />
+          {item.status === ('NUDGED' as any) && (
+            <span className="text-[10px] font-bold text-sky-700 dark:text-sky-300 bg-sky-100 dark:bg-sky-950 px-1.5 py-0.5 rounded border border-sky-300 dark:border-sky-800">
+              Nudge Dispatched
+            </span>
+          )}
+          {item.status === ('ESCALATED' as any) && (
+            <span className="text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-950 px-1.5 py-0.5 rounded border border-rose-300 dark:border-rose-800">
+              Escalated to Mgmt
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'actions',
@@ -91,7 +126,7 @@ export const DealHealthPage: React.FC = () => {
             onClick={() => handleOpenAction(item, 'NUDGE')}
           >
             <Bell className="h-3 w-3 mr-1" />
-            Nudge Rep
+            {item.status === ('NUDGED' as any) ? 'Nudge Again' : 'Nudge Rep'}
           </Button>
           <Button
             size="sm"
@@ -100,7 +135,7 @@ export const DealHealthPage: React.FC = () => {
             onClick={() => handleOpenAction(item, 'ESCALATE')}
           >
             <ArrowUpRight className="h-3 w-3 mr-1" />
-            Escalate
+            {item.status === ('ESCALATED' as any) ? 'Escalated' : 'Escalate'}
           </Button>
         </div>
       ),
@@ -173,12 +208,21 @@ export const DealHealthPage: React.FC = () => {
         />
       </div>
 
+      {feedbackBanner && (
+        <div className="p-3 rounded-card bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center gap-2 font-medium">
+          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>{feedbackBanner}</span>
+        </div>
+      )}
+
       {selectedAlert && (
         <AlertActionModal
           open={actionModalOpen}
           onOpenChange={setActionModalOpen}
           actionType={actionType}
           alertTitle={selectedAlert.title}
+          dealReference={selectedAlert.deal_reference}
+          customerName={selectedAlert.customer_name}
           onConfirm={(msg) => actionMutation.mutate({ id: selectedAlert.id, action: actionType, msg })}
           isLoading={actionMutation.isPending}
         />

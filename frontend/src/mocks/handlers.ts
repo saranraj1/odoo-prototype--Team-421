@@ -919,8 +919,33 @@ export const handlers = [
   }),
 
   // Notifications
-  http.get('*/api/v1/notifications', () => {
-    return HttpResponse.json({ data: mockState.notifications });
+  http.get('*/api/v1/notifications', ({ request }) => {
+    const authHeader = request.headers.get('Authorization') || '';
+    let userRole = '';
+    let userId = 0;
+    if (authHeader.startsWith('Bearer mock_jwt_')) {
+      const parts = authHeader.replace('Bearer mock_jwt_', '').split('_');
+      userId = parseInt(parts[parts.length - 1], 10) || 0;
+      userRole = parts.slice(0, parts.length - 1).join('_').toUpperCase();
+    }
+
+    const filtered = mockState.notifications.filter((n: any) => {
+      // System Admin sees all notifications for audit purposes
+      if (userRole === 'ADMIN') return true;
+      // Match specific user ID if set
+      if (n.recipient_odoo_user_id && userId && n.recipient_odoo_user_id === userId) return true;
+      // Match specific target role
+      if (n.recipient_role) {
+        if (Array.isArray(n.recipient_role)) {
+          return n.recipient_role.includes(userRole);
+        }
+        return n.recipient_role === userRole;
+      }
+      // General notifications visible to all staff
+      return true;
+    });
+
+    return HttpResponse.json({ data: filtered });
   }),
 
   http.post('*/api/v1/notifications/:id/read', ({ params }) => {
@@ -933,6 +958,7 @@ export const handlers = [
     mockState.notifications.forEach((n) => (n.is_read = true));
     return HttpResponse.json({ message: 'All marked read' });
   }),
+
 
   // Odoo Proxies
   http.get('*/api/v1/odoo/products', () => {
@@ -1495,20 +1521,233 @@ export const handlers = [
   }),
 
 
-  // Alerts Actions
+  // Alerts Actions: Real Governance Flow for Nudge and Escalate
   http.post('*/api/v1/alerts/:id/actions', async ({ params, request }) => {
     const id = String(params.id);
     const body = (await request.json().catch(() => ({}))) as any;
-    const alert = mockState.alerts.find((a) => a.id === id);
-    if (alert) {
-      alert.status = 'ACKNOWLEDGED';
+    const action = (body.action || 'NUDGE').toUpperCase();
+    const customMessage = (body.message || '').trim();
+
+    // 1. Locate the alert
+    let alert = mockState.alerts.find((a) => a.id === id || a.deal_id === id);
+    if (!alert) {
+      alert = {
+        id,
+        deal_id: id.startsWith('deal_') ? id : `deal_${id}`,
+        deal_reference: id.toUpperCase(),
+        customer_name: 'Customer Account',
+        type: 'STALLED_DEAL',
+        title: `Deal Alert: ${id}`,
+        status: 'OPEN',
+        severity: 'MEDIUM',
+        health_status: 'WATCH',
+        created_at: new Date().toISOString(),
+      };
+      mockState.alerts.push(alert);
     }
-    const qItem = mockState.controlTower.action_queue.find((q) => q.id === id);
-    if (qItem) {
-      qItem.title += ` [${body.action}]`;
+
+    const authHeader = request.headers.get('Authorization') || '';
+    let senderName = 'Sales Management';
+    if (authHeader.includes('sales_rep')) {
+      senderName = 'Sales Rep One';
+    } else if (authHeader.includes('finance')) {
+      senderName = 'Finance Director';
+    } else if (authHeader.includes('sales_manager')) {
+      senderName = 'Sales Manager North';
+    } else if (authHeader.includes('admin')) {
+      senderName = 'System Administrator';
     }
-    return HttpResponse.json({ message: `Alert action ${body.action || 'ACTION'} applied successfully` });
+
+    // 2. FLOW: NUDGE REP -> Routes to SALES_REP
+    if (action === 'NUDGE') {
+      alert.status = 'NUDGED' as any;
+      alert.last_action = `Nudge dispatched by ${senderName} to Sales Rep (${new Date().toLocaleTimeString()})`;
+
+      const repUserId = 4; // Sales Rep One (owner)
+      const notifMsg =
+        customMessage ||
+        `Management check-in: Please follow up on ${alert.deal_reference} (${alert.customer_name}) regarding ${alert.title}.`;
+
+      // (A) Target Role: SALES_REP notification
+      mockState.notifications.unshift({
+        id: `notif_nudge_${Date.now()}`,
+        recipient_odoo_user_id: repUserId,
+        recipient_role: 'SALES_REP',
+        type: 'DEAL_NUDGED',
+        title: `🔔 Management Nudge: Follow-up required on ${alert.deal_reference}`,
+        body: notifMsg,
+        entity_type: 'deal',
+        entity_id: alert.deal_id,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      });
+
+      // (B) Enqueue urgent action for Sales Rep in Control Tower
+      const queueIndex = mockState.controlTower.action_queue.findIndex((q) => q.deal_id === alert?.deal_id);
+      const queueItem = {
+        kind: 'ALERT' as const,
+        id: `queue_nudge_${Date.now()}`,
+        deal_id: alert.deal_id,
+        reference: alert.deal_reference,
+        customer: alert.customer_name,
+        title: `[NUDGE: Rep Follow-Up] ${alert.title} — Immediate Rep Outreach Required`,
+        severity: 'HIGH' as const,
+        priority: 1,
+        raised_at: new Date().toISOString(),
+        deep_link: `/quotations/${alert.deal_id}`,
+      };
+      if (queueIndex >= 0) {
+        mockState.controlTower.action_queue[queueIndex] = queueItem;
+      } else {
+        mockState.controlTower.action_queue.unshift(queueItem);
+      }
+
+      // (C) Update deal workspace activity history
+      const ws = mockState.getOrCreateWorkspace(alert.deal_id);
+      if (ws) {
+        if (!(ws as any).activities) (ws as any).activities = [];
+        (ws as any).activities.unshift({
+          id: `act_${Date.now()}`,
+          type: 'NUDGE',
+          actor: senderName,
+          description: `Management dispatched a nudge to Sales Rep: "${notifMsg}"`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+
+      return HttpResponse.json({
+        success: true,
+        message: `Nudge successfully dispatched to Sales Representative for ${alert.deal_reference}`,
+        flow: {
+          action: 'NUDGE',
+          target_role: 'SALES_REP',
+          recipient: 'Sales Rep One (rep1@dealflow.test)',
+          deal_reference: alert.deal_reference,
+          notification_dispatched: true,
+          action_queue_enqueued: true,
+        },
+      });
+    }
+
+    // 3. FLOW: ESCALATE -> Routes to SALES_MANAGER and FINANCE
+    if (action === 'ESCALATE') {
+      alert.status = 'ESCALATED' as any;
+      alert.health_status = 'AT_RISK';
+      alert.last_action = `Escalated by ${senderName} to Governance Council (${new Date().toLocaleTimeString()})`;
+
+      const escMsg =
+        customMessage ||
+        `High-priority escalation on ${alert.deal_reference} (${alert.customer_name}) due to: ${alert.title}. Immediate governance review required.`;
+
+      // (A) Target Roles: SALES_MANAGER and FINANCE notifications
+      mockState.notifications.unshift(
+        {
+          id: `notif_esc_mgr_${Date.now()}`,
+          recipient_odoo_user_id: 2, // Sales Manager North
+          recipient_role: 'SALES_MANAGER',
+          type: 'DEAL_ESCALATED',
+          title: `🚨 Governance Escalation: ${alert.deal_reference} (${alert.customer_name})`,
+          body: escMsg,
+          entity_type: 'deal',
+          entity_id: alert.deal_id,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: `notif_esc_fin_${Date.now()}`,
+          recipient_odoo_user_id: 6, // Finance Director
+          recipient_role: 'FINANCE',
+          type: 'DEAL_ESCALATED',
+          title: `🚨 Commercial Policy Escalation: ${alert.deal_reference}`,
+          body: `Finance risk review triggered: ${escMsg}`,
+          entity_type: 'deal',
+          entity_id: alert.deal_id,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        }
+      );
+
+      // (B) Enqueue in Pending Approvals for Sales Manager & Finance
+      const existingApprIdx = mockState.approvals.findIndex((a) => a.id === alert?.deal_id);
+      const approvalEntry = {
+        id: alert.deal_id,
+        reference: alert.deal_reference,
+        customer: alert.customer_name,
+        risk_score: 58.5,
+        severity: 'HIGH' as const,
+        stage: 'Sales Manager',
+        assigned_to: 'Sunita Sales Manager North',
+        status: 'PENDING' as const,
+        amount: 420000,
+        created_at: new Date().toISOString(),
+      };
+      if (existingApprIdx >= 0) {
+        mockState.approvals[existingApprIdx] = {
+          ...mockState.approvals[existingApprIdx],
+          status: 'PENDING',
+          severity: 'HIGH',
+        };
+      } else {
+        mockState.approvals.unshift(approvalEntry);
+      }
+
+      // (C) Enqueue top priority item in Control Tower
+      const queueIndex = mockState.controlTower.action_queue.findIndex((q) => q.deal_id === alert?.deal_id);
+      const queueItem = {
+        kind: 'APPROVAL' as const,
+        id: `queue_esc_${Date.now()}`,
+        deal_id: alert.deal_id,
+        reference: alert.deal_reference,
+        customer: alert.customer_name,
+        title: `[GOVERNANCE ESCALATION] ${alert.title} — Executive Sign-off Required`,
+        severity: 'HIGH' as const,
+        priority: 1,
+        raised_at: new Date().toISOString(),
+        deep_link: `/approvals/${alert.deal_id}`,
+      };
+      if (queueIndex >= 0) {
+        mockState.controlTower.action_queue[queueIndex] = queueItem;
+      } else {
+        mockState.controlTower.action_queue.unshift(queueItem);
+      }
+
+      // (D) Update deal workspace approval state
+      const ws = mockState.getOrCreateWorkspace(alert.deal_id);
+      if (ws) {
+        ws.deal.status = 'DRAFT';
+        ws.deal.approval_state = 'PENDING_MANAGER';
+        ws.deal.required_level = 'MANAGER_AND_FINANCE';
+        ws.approval.state = 'PENDING_MANAGER';
+        ws.approval.can_decide = true;
+        if (!(ws as any).activities) (ws as any).activities = [];
+        (ws as any).activities.unshift({
+          id: `act_${Date.now()}`,
+          type: 'ESCALATE',
+          actor: senderName,
+          description: `Commercial policy escalation triggered: "${escMsg}"`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+
+      return HttpResponse.json({
+        success: true,
+        message: `Escalation successfully routed to Sales Manager and Finance for ${alert.deal_reference}`,
+        flow: {
+          action: 'ESCALATE',
+          target_roles: ['SALES_MANAGER', 'FINANCE'],
+          recipients: ['Sunita Sales Manager North', 'Vikram Finance Officer'],
+          deal_reference: alert.deal_reference,
+          approval_queue_enqueued: true,
+          notifications_dispatched: true,
+        },
+      });
+    }
+
+    return HttpResponse.json({ message: `Action ${action} processed successfully` });
   }),
+
 
   http.post('*/api/v1/alerts/:id/acknowledge', ({ params }) => {
     const alert = mockState.alerts.find((a) => a.id === params.id);

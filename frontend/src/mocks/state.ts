@@ -1,7 +1,7 @@
 import { INITIAL_GOLDEN_DEAL } from './fixtures/goldenDeal';
 import { MOCK_PRODUCTS, MOCK_PARTNERS, MOCK_WAREHOUSES } from './fixtures/products';
 import { INITIAL_MOCK_USERS, getStoredUsers, saveStoredUsers, type UserAccountData } from './fixtures/users';
-import type { DealWorkspace, ControlTowerData, DealAlertItem } from '@/api/types';
+import type { DealWorkspace, ControlTowerData, DealAlertItem, NotificationItem } from '@/api/types';
 
 class MockStateManager {
   public goldenDeal: DealWorkspace = JSON.parse(JSON.stringify(INITIAL_GOLDEN_DEAL));
@@ -409,7 +409,7 @@ class MockStateManager {
     },
   ];
 
-  public notifications = [
+  public notifications: NotificationItem[] = [
     {
       id: 'notif_1',
       recipient_odoo_user_id: 4,

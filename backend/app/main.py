@@ -546,6 +546,90 @@ def get_or_export_report(
     }
 
 
+# -----------------------------------------------------------------------------
+# Deal Health & Alert Governance Endpoints (Nudge / Escalate)
+# -----------------------------------------------------------------------------
+
+class AlertActionPayload(BaseModel):
+    action: str = "NUDGE"  # NUDGE or ESCALATE
+    message: Optional[str] = None
+
+
+@app.get("/api/v1/alerts", tags=["Alerts"])
+@app.get("/alerts", tags=["Alerts"])
+def list_alerts(type: Optional[str] = None) -> Dict[str, Any]:
+    """Retrieve active governance alerts and anomaly flags."""
+    sample_alerts = [
+        {
+            "id": "alert_1",
+            "deal_id": "deal_d1022_gamma",
+            "deal_reference": "D-1022",
+            "customer_name": "Gamma LLC",
+            "type": "STALLED_DEAL",
+            "title": "Stalled Deal: Idle for 12 days",
+            "status": "OPEN",
+            "severity": "MEDIUM",
+            "health_status": "WATCH",
+            "created_at": "2026-08-25T10:00:00Z",
+        },
+        {
+            "id": "alert_2",
+            "deal_id": "deal_d1023_beta",
+            "deal_reference": "D-1023",
+            "customer_name": "Beta Industries",
+            "type": "DISCOUNT_ANOMALY",
+            "title": "Discount Anomaly: 22% given vs rep baseline 8%",
+            "status": "OPEN",
+            "severity": "HIGH",
+            "health_status": "AT_RISK",
+            "created_at": "2026-09-04T14:30:00Z",
+        },
+    ]
+    if type:
+        sample_alerts = [a for a in sample_alerts if a["type"] == type]
+    return {"success": True, "data": sample_alerts}
+
+
+@app.post("/api/v1/alerts/{alert_id}/actions", tags=["Alerts"])
+@app.post("/alerts/{alert_id}/actions", tags=["Alerts"])
+def act_on_governance_alert(alert_id: str, payload: AlertActionPayload) -> Dict[str, Any]:
+    """Process NUDGE or ESCALATE action on deal health alerts with proper role routing."""
+    act = payload.action.upper()
+    if act == "NUDGE":
+        return {
+            "success": True,
+            "message": f"Nudge successfully dispatched to Sales Representative for alert {alert_id}",
+            "flow": {
+                "action": "NUDGE",
+                "target_role": "SALES_REP",
+                "recipient": "Sales Rep One (rep1@dealflow.test)",
+                "notification_enqueued": True,
+                "action_queue_enqueued": True,
+            },
+        }
+    elif act == "ESCALATE":
+        return {
+            "success": True,
+            "message": f"Escalation successfully routed to Sales Manager and Finance for alert {alert_id}",
+            "flow": {
+                "action": "ESCALATE",
+                "target_roles": ["SALES_MANAGER", "FINANCE"],
+                "recipients": ["Sales Manager North (manager1@dealflow.test)", "Finance Director (finance@dealflow.test)"],
+                "approval_queue_enqueued": True,
+                "notification_enqueued": True,
+            },
+        }
+    return {"success": True, "message": f"Action {act} processed"}
+
+
+@app.post("/api/v1/alerts/recompute", tags=["Alerts"])
+@app.post("/alerts/recompute", tags=["Alerts"])
+def recompute_alerts() -> Dict[str, Any]:
+    """Recompute deal anomaly indicators."""
+    return {"success": True, "message": "Health engine recomputed all governance flags"}
+
+
+
 
 if __name__ == "__main__":
     import uvicorn

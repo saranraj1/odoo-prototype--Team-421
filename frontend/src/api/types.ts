@@ -431,6 +431,7 @@ export interface DealAlertItem {
 export interface NotificationItem {
   id: string;
   recipient_odoo_user_id: number;
+  recipient_role?: string;
   type: string;
   title: string;
   body: string;
@@ -439,4 +440,5 @@ export interface NotificationItem {
   is_read: boolean;
   created_at: string;
 }
+
 
