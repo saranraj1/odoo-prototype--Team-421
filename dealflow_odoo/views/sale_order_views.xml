@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Inherit and Extend Sale Order Form View for DealFlow Integration -->
+    <record id="view_order_form_dealflow" model="ir.ui.view">
+        <field name="name">sale.order.form.dealflow</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="priority">25</field>
+        <field name="arch" type="xml">
+
+            <!-- 1. Header Buttons & DealFlow Approval Statusbar -->
+            <xpath expr="//header" position="inside">
+                <button name="action_dealflow_lock"
+                        string="Lock Deal"
+                        type="object"
+                        class="btn-secondary"
+                        invisible="dealflow_locked or state in ('sale', 'cancel')"
+                        help="Lock order from confirmation pending DealFlow governance approval"/>
+                <button name="action_dealflow_unlock"
+                        string="Unlock Deal"
+                        type="object"
+                        class="btn-secondary"
+                        invisible="not dealflow_locked or state in ('sale', 'cancel')"
+                        help="Unlock order for standard execution"/>
+                <field name="dealflow_approval_state"
+                       widget="statusbar"
+                       statusbar_visible="draft,pending_approval,approved"
+                       options="{'clickable': False}"/>
+            </xpath>
+
+            <!-- 2. DealFlow Locked Alert Banner at Sheet Top -->
+            <xpath expr="//sheet" position="before">
+                <div class="alert alert-danger d-flex align-items-center mb-0"
+                     role="alert"
+                     invisible="not dealflow_locked">
+                    <i class="fa fa-lock fa-2x me-3 text-danger"/>
+                    <div>
+                        <strong>DealFlow Governance Alert:</strong> This quotation is currently <strong>LOCKED</strong> pending DealFlow approval. Order confirmation and fulfillment are restricted until governance criteria are satisfied.
+                    </div>
+                </div>
+            </xpath>
+
+            <!-- 3. Status Badges Summary (Approval, Health, Risk Score, Blended Discount) -->
+            <xpath expr="//div[hasclass('oe_title')]" position="before">
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <span class="badge rounded-pill bg-light text-dark border p-2">
+                        <span class="text-muted me-1">Approval:</span>
+                        <field name="dealflow_approval_state"
+                               widget="badge"
+                               decoration-info="dealflow_approval_state == 'pending_approval'"
+                               decoration-success="dealflow_approval_state == 'approved'"
+                               decoration-danger="dealflow_approval_state == 'rejected'"
+                               decoration-warning="dealflow_approval_state == 'reapproval_required'"/>
+                    </span>
+                    <span class="badge rounded-pill bg-light text-dark border p-2">
+                        <span class="text-muted me-1">Health:</span>
+                        <field name="dealflow_health_status"
+                               widget="badge"
+                               decoration-success="dealflow_health_status == 'healthy'"
+                               decoration-warning="dealflow_health_status == 'at_risk'"
+                               decoration-danger="dealflow_health_status == 'critical'"/>
+                    </span>
+                    <span class="badge rounded-pill bg-light text-dark border p-2">
+                        <span class="text-muted me-1">Risk:</span>
+                        <field name="dealflow_risk_score" class="fw-bold"/>
+                    </span>
+                    <span class="badge rounded-pill bg-light text-dark border p-2">
+                        <span class="text-muted me-1">Blended Disc:</span>
+                        <field name="dealflow_blended_discount" widget="percentage" class="fw-bold"/>
+                    </span>
+                    <field name="dealflow_locked" invisible="1"/>
+                </div>
+            </xpath>
+
+            <!-- 4. Line Items Extension (Approved Discount, Cost, Margin, Recurring Indicators) -->
+            <xpath expr="//field[@name='order_line']/tree//field[@name='discount']" position="after">
+                <field name="dealflow_approved_discount" optional="show" widget="percentage"/>
+                <field name="dealflow_cost_price" optional="hide" widget="monetary"/>
+                <field name="dealflow_margin" optional="show" widget="monetary"/>
+                <field name="dealflow_is_recurring" optional="show"/>
+                <field name="dealflow_recurring_interval" optional="show" invisible="not dealflow_is_recurring"/>
+            </xpath>
+
+            <!-- 5. Dedicated DealFlow Governance Notebook Tab -->
+            <xpath expr="//notebook" position="inside">
+                <page string="DealFlow Governance" name="dealflow_governance">
+                    <group>
+                        <group string="Deal Intelligence &amp; Identification">
+                            <field name="dealflow_deal_id" readonly="1"/>
+                            <field name="dealflow_risk_score" readonly="1" widget="progressbar"
+                                   options="{'max_value': 100}"/>
+                            <field name="dealflow_health_status" readonly="1"/>
+                            <field name="dealflow_last_evaluated_at" readonly="1"/>
+                        </group>
+                        <group string="Commercial Governance &amp; Controls">
+                            <field name="dealflow_approval_state" readonly="1"/>
+                            <field name="dealflow_locked" readonly="1" widget="boolean_toggle"/>
+                            <field name="dealflow_blended_discount" readonly="1" widget="percentage"/>
+                        </group>
+                    </group>
+                    <group string="Deal Guardian Assessment &amp; Policy Details">
+                        <div class="text-muted">
+                            <p>
+                                The <strong>DealFlow Deal Guardian</strong> continuously audits quotation pricing against organizational discount authority limits and commercial margin thresholds.
+                            </p>
+                            <ul>
+                                <li><strong>Representative Discretion:</strong> Quotations with discounts &lt;= 10.0% may proceed autonomously.</li>
+                                <li><strong>Manager / Finance Approval:</strong> Higher discounts automatically lock the order and require formal DealFlow sign-off.</li>
+                                <li><strong>Tamper Guard:</strong> Any modification to line items, prices, discounts, or terms following approval resets the deal state to <em>Reapproval Required</em> and re-engages the lock.</li>
+                            </ul>
+                        </div>
+                    </group>
+                </page>
+            </xpath>
+
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_dealflow_negotiation_portal,dealflow.negotiation.portal,model_dealflow_negotiation,dealflow_odoo.group_dealflow_portal,1,0,1,0
+access_dealflow_negotiation_rep,dealflow.negotiation.sales_rep,model_dealflow_negotiation,dealflow_odoo.group_dealflow_sales_rep,1,1,1,0
+access_dealflow_negotiation_manager,dealflow.negotiation.sales_manager,model_dealflow_negotiation,dealflow_odoo.group_dealflow_sales_manager,1,1,1,1
+access_dealflow_negotiation_finance,dealflow.negotiation.finance,model_dealflow_negotiation,dealflow_odoo.group_dealflow_finance,1,1,1,1
+access_dealflow_negotiation_admin,dealflow.negotiation.admin,model_dealflow_negotiation,dealflow_odoo.group_dealflow_admin,1,1,1,1
