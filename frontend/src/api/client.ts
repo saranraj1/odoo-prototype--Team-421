@@ -1,4 +1,4 @@
-﻿import { API_BASE_URL } from '@/lib/constants';
+import { API_BASE_URL } from '@/lib/constants';
 import type { ApiErrorEnvelope } from './types';
 
 export class ApiClientError extends Error {
@@ -41,7 +41,19 @@ export async function apiClient<T = any>(
   if (!response.ok) {
     let errorEnvelope: ApiErrorEnvelope;
     try {
-      errorEnvelope = await response.json();
+      const errJson = await response.json();
+      errorEnvelope = {
+        error: {
+          code: errJson?.error?.code || errJson?.code || `HTTP_${response.status}`,
+          message:
+            errJson?.error?.message ||
+            errJson?.detail ||
+            errJson?.message ||
+            response.statusText ||
+            'Unexpected server error',
+          details: errJson?.error?.details || errJson?.details,
+        },
+      };
     } catch {
       errorEnvelope = {
         error: {
@@ -51,7 +63,8 @@ export async function apiClient<T = any>(
       };
     }
 
-    if (response.status === 401) {
+    // Only redirect to login if this was not an explicit login attempt
+    if (response.status === 401 && !path.includes('/auth/login') && !path.includes('/portal/auth/login')) {
       sessionStorage.removeItem(tokenKey);
       if (isPortal) {
         window.location.href = '/portal/login';

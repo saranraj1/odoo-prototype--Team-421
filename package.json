@@ -5,6 +5,7 @@
   "description": "DealFlow360 - Intelligent Sales Operations & Governance for Odoo",
   "scripts": {
     "dev": "npm --prefix frontend run dev",
+    "backend": "python run_backend.py",
     "build": "npm --prefix frontend run build",
     "lint": "npm --prefix frontend run lint",
     "preview": "npm --prefix frontend run preview"

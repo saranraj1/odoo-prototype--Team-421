@@ -1,8 +1,6 @@
-﻿import React from 'react';
+import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { TopNav } from '@/components/layout/TopNav';
-import { DemoControls } from '@/components/layout/DemoControls';
-import { DEMO_MODE } from '@/lib/constants';
 
 export const InternalLayout: React.FC = () => {
   return (
@@ -11,7 +9,6 @@ export const InternalLayout: React.FC = () => {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20">
         <Outlet />
       </main>
-      {DEMO_MODE && <DemoControls />}
     </div>
   );
 };

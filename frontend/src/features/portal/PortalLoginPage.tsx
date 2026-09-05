@@ -7,12 +7,12 @@ import { HintStrip } from '@/components/data/HintStrip';
 import { authApi } from '@/api/endpoints/auth';
 import { usePortalAuthStore } from './portalAuthStore';
 import { useAuthStore } from '@/features/auth/authStore';
-import { Loader2, ShieldCheck, MailCheck, KeyRound, ArrowRight, Building2, Users } from 'lucide-react';
+import { Loader2, ShieldCheck, MailCheck, KeyRound, ArrowRight, Users } from 'lucide-react';
 
 export const PortalLoginPage: React.FC = () => {
   const [authMode, setAuthMode] = useState<'password' | 'magic'>('password');
-  const [login, setLogin] = useState('buyer@acme.test');
-  const [password, setPassword] = useState('Password123!');
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [magicSubmitted, setMagicSubmitted] = useState(false);
@@ -20,13 +20,13 @@ export const PortalLoginPage: React.FC = () => {
   const { setAuth } = usePortalAuthStore();
   const navigate = useNavigate();
 
-  const handlePasswordLogin = async (e: React.FormEvent, customLogin?: string, customPass?: string) => {
+  const handlePasswordLogin = async (e: React.FormEvent) => {
     if (e) e.preventDefault();
     setError(null);
     setIsLoading(true);
 
-    const emailToUse = (customLogin || login).trim();
-    const passToUse = customPass || password;
+    const emailToUse = login.trim();
+    const passToUse = password;
 
     try {
       const res = await authApi.portalLogin(emailToUse, passToUse);
@@ -43,24 +43,10 @@ export const PortalLoginPage: React.FC = () => {
       setAuth(res.access_token, res.partner);
       navigate('/portal/quotations');
     } catch (err: any) {
-      setError(err.message || 'Invalid login or password.');
+      setError(err?.message || 'Invalid login or password.');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleRoleQuickLogin = (roleLogin: string, rolePass: string) => {
-    setLogin(roleLogin);
-    setPassword(rolePass);
-    setAuthMode('password');
-    handlePasswordLogin(undefined as any, roleLogin, rolePass);
-  };
-
-  const handleCustomerQuickLogin = (custLogin: string, custPass: string) => {
-    setLogin(custLogin);
-    setPassword(custPass);
-    setAuthMode('password');
-    handlePasswordLogin(undefined as any, custLogin, custPass);
   };
 
   const handleMagicLinkSubmit = async (e: React.FormEvent) => {
@@ -145,12 +131,12 @@ export const PortalLoginPage: React.FC = () => {
               </label>
               <Input
                 id="portal-login"
-                type="email"
-                inputMode="email"
+                type="text"
+                autoComplete="username"
                 required
                 value={login}
                 onChange={(e) => setLogin(e.target.value)}
-                placeholder="buyer@acme.test or internal team email"
+                placeholder="e.g. buyer@acme.test or buyer.acme"
               />
             </div>
 
@@ -226,81 +212,7 @@ export const PortalLoginPage: React.FC = () => {
           </form>
         )}
 
-        {/* Quick Demo Role Selectors */}
-        <div className="pt-2 border-t border-border/60 space-y-2.5">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10px] font-semibold text-text-muted flex items-center gap-1">
-                <Users className="h-3 w-3 text-brand" />
-                Enterprise Roles (Auto-Redirects to Cockpit):
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleRoleQuickLogin('rep1@dealflow.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 cursor-pointer transition-colors"
-                title="Sales Representative"
-              >
-                Sales Rep
-              </button>
-              <button
-                type="button"
-                onClick={() => handleRoleQuickLogin('manager1@dealflow.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 cursor-pointer transition-colors"
-                title="Sales Manager (Control Tower)"
-              >
-                Sales Manager
-              </button>
-              <button
-                type="button"
-                onClick={() => handleRoleQuickLogin('finance@dealflow.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 cursor-pointer transition-colors"
-                title="Finance Director (Operations)"
-              >
-                Finance
-              </button>
-              <button
-                type="button"
-                onClick={() => handleRoleQuickLogin('admin@dealflow.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 cursor-pointer transition-colors"
-                title="System Administrator"
-              >
-                Admin
-              </button>
-            </div>
-          </div>
 
-          <div>
-            <p className="text-[10px] font-semibold text-text-muted mb-1.5 flex items-center gap-1">
-              <Building2 className="h-3 w-3 text-emerald-600" />
-              Customer Accounts (Lands on Quotation Portal):
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleCustomerQuickLogin('buyer@acme.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-pointer font-semibold transition-colors"
-              >
-                Acme Corp (buyer@acme.test)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCustomerQuickLogin('buyer@beta.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-pointer font-semibold transition-colors"
-              >
-                Beta Ltd (buyer@beta.test)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCustomerQuickLogin('buyer@gamma.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-pointer font-semibold transition-colors"
-              >
-                Gamma Inc (buyer@gamma.test)
-              </button>
-            </div>
-          </div>
-        </div>
 
         <HintStrip>
           All internal costs, margins, and approval thresholds are strictly stripped before rendering in the customer portal.

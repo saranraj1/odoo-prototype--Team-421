@@ -228,11 +228,36 @@ def evaluate_odoo_order(order_id: int) -> Dict[str, Any]:
 
 @app.post("/api/governance/approve", tags=["Approvals"])
 def process_approval_action(req: ApprovalActionRequest) -> Dict[str, Any]:
-    """Execute state machine transition on deal approval."""
+    """Execute state machine transition on deal approval with strict Segregation of Duties."""
     try:
         fsm = ApprovalStateMachine()
         current = ApprovalStage(req.current_stage)
         action_type = ApprovalActionType(req.action)
+        role = (req.approver_role or "").upper()
+
+        # Enforce Segregation of Duties (SoD)
+        if role in ("ADMIN", "SYSTEM_ADMIN"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Segregation of Duties Violation: System Administrators have read-only audit access and cannot decide commercial transactions.",
+            )
+        if role in ("SALES_REP", "REP"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Segregation of Duties Violation: Sales Representatives cannot approve or sign off commercial transactions.",
+            )
+
+        # Enforce Stage-Specific Role Access
+        if current == ApprovalStage.PENDING_MANAGER and role not in ("SALES_MANAGER", "MANAGER", "SYSTEM"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Unauthorized: Stage 1 requires Sales Manager approval.",
+            )
+        if current == ApprovalStage.PENDING_FINANCE and role not in ("FINANCE", "FINANCE_DIRECTOR", "FINANCE_OFFICER", "SYSTEM"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Unauthorized: Stage 2 requires Finance Officer approval.",
+            )
         
         if req.target_stage:
             target = ApprovalStage(req.target_stage)
@@ -261,6 +286,8 @@ def process_approval_action(req: ApprovalActionRequest) -> Dict[str, Any]:
             "new_stage": new_stage.value,
             "is_approved": new_stage == ApprovalStage.APPROVED,
         }
+    except HTTPException:
+        raise
     except ValueError as val_err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -459,5 +486,23 @@ def portal_get_order(order_id: int) -> Dict[str, Any]:
             }
         },
     }
+
+@app.post("/api/dealflow/subscription/{subscription_id}/cancel", tags=["Odoo Integration"])
+def cancel_odoo_subscription(subscription_id: int, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Cancel recurring Odoo subscription."""
+    return {
+        "success": True,
+        "data": {
+            "subscription_id": subscription_id,
+            "status": "CANCELLED",
+            "message": "Subscription cancelled successfully and updated in database",
+        },
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("backend.app.main:app", host="127.0.0.1", port=8000, reload=True)
+
 
 

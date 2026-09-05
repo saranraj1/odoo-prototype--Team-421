@@ -72,6 +72,32 @@ def test_approval_action_transition(client):
     assert data["is_approved"] is True
 
 
+def test_admin_and_rep_blocked_by_sod(client):
+    # Admin approval attempt must fail with 403 Forbidden
+    admin_req = {
+        "deal_id": "DEAL-1024",
+        "current_stage": "PENDING_MANAGER",
+        "action": "APPROVE",
+        "approver_role": "ADMIN",
+        "comments": "Admin override attempt",
+    }
+    resp = client.post("/api/governance/approve", json=admin_req)
+    assert resp.status_code == 403
+    assert "Segregation of Duties" in resp.json()["detail"]
+
+    # Sales Rep approval attempt must fail with 403 Forbidden
+    rep_req = {
+        "deal_id": "DEAL-1024",
+        "current_stage": "PENDING_MANAGER",
+        "action": "APPROVE",
+        "approver_role": "SALES_REP",
+        "comments": "Rep self-approval attempt",
+    }
+    resp_rep = client.post("/api/governance/approve", json=rep_req)
+    assert resp_rep.status_code == 403
+    assert "Segregation of Duties" in resp_rep.json()["detail"]
+
+
 def test_negotiation_invalidation_endpoint(client, sample_gold_deal):
     baseline = sample_gold_deal.model_copy(deep=True)
     baseline.approval_state = "APPROVED"

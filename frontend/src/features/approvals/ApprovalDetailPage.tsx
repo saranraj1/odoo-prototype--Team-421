@@ -111,16 +111,17 @@ export const ApprovalDetailPage: React.FC = () => {
   const isPendingFinance = approval.state === 'PENDING_FINANCE';
   const isPendingManager = approval.state === 'PENDING_MANAGER';
 
-  // Strict role-stage permission enforcement:
+  // Strict role-stage permission enforcement & Segregation of Duties:
   // - Sales Manager can ONLY approve Stage 1 (PENDING_MANAGER).
   // - Finance can ONLY approve Stage 2 (PENDING_FINANCE).
-  // - System Admin has executive override for either stage.
+  // - System Admin is an IT/Configuration persona with read-only audit visibility.
+  //   In compliance with Segregation of Duties (SoD), Admins CANNOT approve deals on behalf of business managers.
+  // - Sales Reps cannot self-approve quotations.
   // - Resolved/Confirmed deals cannot be decided further.
   const canUserActOnCurrentStage = () => {
     if (isApproved || isRejected || isReturned || deal.status === 'CONFIRMED' || deal.status === 'CANCELLED') {
       return false;
     }
-    if (user?.role === 'ADMIN') return true;
     if (isPendingManager) {
       return user?.role === 'SALES_MANAGER';
     }
@@ -351,6 +352,42 @@ export const ApprovalDetailPage: React.FC = () => {
           </div>
           <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">
             Awaiting Manager
+          </span>
+        </div>
+      )}
+
+      {/* Segregation of Duties (SoD) Audit Banner for System Admin */}
+      {!isApproved && !isRejected && !isReturned && deal.status !== 'CONFIRMED' && deal.status !== 'CANCELLED' && user?.role === 'ADMIN' && (
+        <div className="p-3.5 rounded-card bg-sky-50 border border-sky-200 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-6 w-6 rounded-full bg-sky-100 text-sky-700 items-center justify-center font-bold text-xs">🛡️</span>
+            <div>
+              <p className="text-xs font-bold text-sky-900">Administrative Audit Mode (Segregation of Duties Enforced)</p>
+              <p className="text-[11px] text-sky-700">
+                System Administrators have read-only audit visibility. In compliance with governance policies, commercial approvals must be decided directly by the designated {isPendingManager ? 'Sales Manager (Stage 1)' : 'Finance Director (Stage 2)'}.
+              </p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 border border-sky-200">
+            Audit Only (No Sign-off Authority)
+          </span>
+        </div>
+      )}
+
+      {/* Segregation of Duties (SoD) Status Banner for Sales Rep */}
+      {!isApproved && !isRejected && !isReturned && deal.status !== 'CONFIRMED' && deal.status !== 'CANCELLED' && user?.role === 'SALES_REP' && (
+        <div className="p-3.5 rounded-card bg-slate-50 border border-slate-200 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-6 w-6 rounded-full bg-amber-100 text-amber-700 items-center justify-center font-bold text-xs">⏳</span>
+            <div>
+              <p className="text-xs font-bold text-slate-800">Quotation Pending Governance Review</p>
+              <p className="text-[11px] text-slate-500">
+                This quote is currently undergoing review by {isPendingManager ? 'Sales Management' : 'Finance'}. Sales representatives cannot self-approve quotations.
+              </p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+            Awaiting Governance
           </span>
         </div>
       )}

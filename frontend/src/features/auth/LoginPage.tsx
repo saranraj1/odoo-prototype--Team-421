@@ -7,16 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { HintStrip } from '@/components/data/HintStrip';
 import { ForgotPasswordDialog } from './ForgotPasswordDialog';
-import { Loader2, UserPlus, LogIn, Sparkles, Building2, ShieldCheck, Lock } from 'lucide-react';
+import { Loader2, UserPlus, LogIn, Building2, ShieldCheck } from 'lucide-react';
 import { usePortalAuthStore } from '@/features/portal/portalAuthStore';
-import { getStoredUsers } from '@/mocks/fixtures/users';
 
 export const LoginPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
   
   // Unified Login fields (Common for all roles)
-  const [login, setLogin] = useState('rep1@dealflow.test');
-  const [password, setPassword] = useState('Password123!');
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
   
   // Customer Signup fields (Customer only)
   const [companyName, setCompanyName] = useState('');
@@ -31,16 +30,15 @@ export const LoginPage: React.FC = () => {
   const { setAuth } = useAuthStore();
   const navigate = useNavigate();
 
-  const handleLoginSubmit = async (e?: React.FormEvent, directLogin?: string, directPassword?: string) => {
+  const handleLoginSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError(null);
     setIsLoading(true);
 
-    const emailToUse = (directLogin || login).trim();
-    const passwordToUse = directPassword || password;
+    const emailToUse = login.trim();
+    const passwordToUse = password;
 
     try {
-      // 1. Try API login endpoint
       const res = await authApi.login(emailToUse, passwordToUse);
       if (res.user.role === 'CUSTOMER') {
         useAuthStore.getState().clearAuth();
@@ -54,33 +52,8 @@ export const LoginPage: React.FC = () => {
         setAuth(res.access_token, res.user);
         navigate('/');
       }
-    } catch {
-      // 2. Direct Mock Store Resolution fallback
-      const users = getStoredUsers();
-      const loginLower = emailToUse.toLowerCase();
-      const matched = Object.values(users).find(
-        (u) => u.email.toLowerCase() === loginLower || u.name.toLowerCase().includes(loginLower)
-      );
-
-      if (matched) {
-        if (matched.role === 'CUSTOMER') {
-          useAuthStore.getState().clearAuth();
-          usePortalAuthStore.getState().setAuth(`mock_token_portal_${matched.id}`, {
-            id: matched.partner_id || matched.odoo_user_id || matched.id,
-            name: matched.company_name || matched.name,
-          });
-          navigate('/portal/quotations');
-        } else {
-          usePortalAuthStore.getState().clearAuth();
-          setAuth(`mock_token_${matched.role.toLowerCase()}_${matched.id}`, matched as any);
-          navigate('/');
-        }
-      } else {
-        // Fallback default rep
-        usePortalAuthStore.getState().clearAuth();
-        setAuth('mock_token_sales_rep', users.rep1 as any);
-        navigate('/');
-      }
+    } catch (err: any) {
+      setError(err?.message || 'Invalid email or password. Please check your credentials.');
     } finally {
       setIsLoading(false);
     }
@@ -112,43 +85,20 @@ export const LoginPage: React.FC = () => {
       if (response.ok) {
         const json = await response.json();
         const customerData = json.data;
+        useAuthStore.getState().clearAuth();
         usePortalAuthStore.getState().setAuth(customerData.access_token, {
           id: customerData.partner?.id || customerData.user.id,
           name: customerData.partner?.name || customerData.user.name,
         });
         navigate('/portal/quotations');
       } else {
-        throw new Error('Signup failed');
+        throw new Error('Registration failed');
       }
-    } catch {
-      // Fallback in-memory save
-      const id = Date.now();
-      const newCustomer = {
-        id,
-        odoo_user_id: id,
-        partner_id: id,
-        name: contactName.trim(),
-        company_name: companyName.trim(),
-        email: customerEmail.trim(),
-        password: customerPassword.trim(),
-        role: 'CUSTOMER' as const,
-        company_id: 1,
-        is_active: true,
-      };
-      usePortalAuthStore.getState().setAuth(`mock_token_portal_${id}`, {
-        id,
-        name: newCustomer.company_name,
-      });
-      navigate('/portal/quotations');
+    } catch (err: any) {
+      setError(err?.message || 'Customer registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleQuickLogin = (email: string, pass: string) => {
-    setLogin(email);
-    setPassword(pass);
-    handleLoginSubmit(undefined, email, pass);
   };
 
   return (
@@ -206,13 +156,12 @@ export const LoginPage: React.FC = () => {
                 </label>
                 <Input
                   id="login"
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
+                  type="text"
+                  autoComplete="username"
                   required
                   value={login}
                   onChange={(e) => setLogin(e.target.value)}
-                  placeholder="e.g. rep1@dealflow.test or buyer@acme.test"
+                  placeholder="e.g. sales.rep or rep1@dealflow.test"
                 />
               </div>
 
@@ -333,59 +282,12 @@ export const LoginPage: React.FC = () => {
             </form>
           )}
 
-          {/* Quick switch demo logins */}
-          <div className="pt-2 border-t border-border">
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10px] text-text-muted flex items-center gap-1 font-semibold">
-                <Sparkles className="h-3 w-3 text-brand" />
-                Default Test Accounts (1-Click Login):
-              </p>
-              <Link to="/portal/login" className="text-[10px] font-bold text-emerald-700 hover:underline">
-                Customer Portal Login &rarr;
-              </Link>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('rep1@dealflow.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] font-medium bg-elevated hover:bg-slate-200 text-text-primary border border-border cursor-pointer transition-colors"
-                title="Sales Representative"
-              >
-                Sales Rep
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('manager1@dealflow.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] font-medium bg-elevated hover:bg-slate-200 text-text-primary border border-border cursor-pointer transition-colors"
-                title="Sales Manager (L1 Approver)"
-              >
-                Sales Manager
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('finance@dealflow.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] font-medium bg-elevated hover:bg-slate-200 text-text-primary border border-border cursor-pointer transition-colors"
-                title="Finance Director (L2 Approver)"
-              >
-                Finance
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('admin@dealflow.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] font-medium bg-elevated hover:bg-slate-200 text-text-primary border border-border cursor-pointer transition-colors"
-                title="System Administrator"
-              >
-                Admin
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('buyer@acme.test', 'Password123!')}
-                className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-pointer transition-colors"
-                title="B2B Customer Portal"
-              >
-                Customer Portal
-              </button>
-            </div>
+          {/* Customer Portal Link */}
+          <div className="pt-2 border-t border-border flex items-center justify-between text-xs text-text-muted">
+            <span>Customer or Partner account?</span>
+            <Link to="/portal/login" className="font-semibold text-emerald-700 hover:underline flex items-center gap-1">
+              Customer Portal Login &rarr;
+            </Link>
           </div>
 
           <HintStrip>

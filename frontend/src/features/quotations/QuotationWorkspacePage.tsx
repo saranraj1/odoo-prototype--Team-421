@@ -106,6 +106,14 @@ export const QuotationWorkspacePage: React.FC = () => {
     },
   });
 
+  const updateOrderDiscountMutation = useMutation({
+    mutationFn: (val: number) => dealsApi.patch(id, { order_discount_pct: val }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.deals.workspace(id), updated);
+      setIsSaved(true);
+    },
+  });
+
   if (isLoading || !workspace) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -203,7 +211,7 @@ export const QuotationWorkspacePage: React.FC = () => {
             Re-evaluate
           </Button>
 
-          {deal.approval_state === 'NOT_EVALUATED' ? (
+          {['NOT_EVALUATED', 'DRAFT', 'RETURNED', 'INVALIDATED'].includes(deal.approval_state) ? (
             <Button
               size="sm"
               variant="default"
@@ -213,12 +221,31 @@ export const QuotationWorkspacePage: React.FC = () => {
             >
               Submit for Approval
             </Button>
+          ) : deal.approval_state === 'PENDING_MANAGER' || deal.approval_state === 'PENDING_FINANCE' ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => navigate(`/approvals/${deal.id}`)}
+              className="gap-1.5 text-xs font-semibold"
+            >
+              Pending Approval
+            </Button>
+          ) : deal.status === 'SENT' ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled
+              className="gap-1.5 text-xs font-semibold text-success"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Sent to Customer
+            </Button>
           ) : (
             <Button
               size="sm"
               variant="default"
               onClick={() => sendMutation.mutate()}
-              disabled={sendMutation.isPending || !canSend || deal.status === 'SENT'}
+              disabled={sendMutation.isPending || !canSend}
               className="gap-1.5 text-xs font-semibold"
             >
               <Send className="h-3.5 w-3.5" />
@@ -260,7 +287,7 @@ export const QuotationWorkspacePage: React.FC = () => {
             orderDiscountPct={deal.order_discount_pct}
             onUpdateLine={(lineId, patch) => updateLineMutation.mutate({ lineId, patch })}
             onDeleteLine={(lineId) => deleteLineMutation.mutate(lineId)}
-            onUpdateOrderDiscount={(val) => dealsApi.patch(id, { order_discount_pct: val })}
+            onUpdateOrderDiscount={(val) => updateOrderDiscountMutation.mutate(val)}
             highlightedLineId={highlightedLineId}
           />
 

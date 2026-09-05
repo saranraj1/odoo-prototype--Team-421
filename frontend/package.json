@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:rbac": "npx tsx scripts/test-auth-rbac.mjs",
+    "test:endpoints": "npx tsx scripts/test-button-endpoints.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

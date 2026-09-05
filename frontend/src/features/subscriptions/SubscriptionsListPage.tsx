@@ -56,6 +56,7 @@ export const SubscriptionsListPage: React.FC = () => {
   const totalSubs = allSubs.length > 0 ? allSubs : fallbackSubs;
   const activeCount = totalSubs.filter((s) => s.status.toLowerCase() === 'active').length;
   const pausedCount = totalSubs.filter((s) => s.status.toLowerCase() === 'paused').length;
+  const cancelledCount = totalSubs.filter((s) => s.status.toLowerCase() === 'cancelled').length;
 
   const columns: ColumnDef<any>[] = [
     { key: 'customer', header: 'Customer', render: (s) => <span className="font-semibold text-text-primary">{s.customer}</span> },
@@ -65,11 +66,23 @@ export const SubscriptionsListPage: React.FC = () => {
     {
       key: 'status',
       header: 'Status',
-      render: (s) => (
-        <span className="px-2.5 py-0.5 rounded-chip text-[10px] font-bold bg-success/20 text-success border border-success/40">
-          {s.status}
-        </span>
-      ),
+      render: (s) => {
+        const isCancelled = s.status?.toLowerCase() === 'cancelled';
+        const isPaused = s.status?.toLowerCase() === 'paused';
+        return (
+          <span
+            className={`px-2.5 py-0.5 rounded-chip text-[10px] font-bold ${
+              isCancelled
+                ? 'bg-danger/20 text-danger border border-danger/40'
+                : isPaused
+                ? 'bg-warning/20 text-warning border border-warning/40'
+                : 'bg-success/20 text-success border border-success/40'
+            }`}
+          >
+            {s.status}
+          </span>
+        );
+      },
     },
   ];
 
@@ -124,6 +137,17 @@ export const SubscriptionsListPage: React.FC = () => {
           }`}
         >
           {pausedCount} Paused
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterStatus('CANCELLED')}
+          className={`px-3 py-1 rounded-chip text-xs font-bold border transition-colors ${
+            filterStatus === 'CANCELLED'
+              ? 'bg-danger/20 text-danger border-danger'
+              : 'bg-surface text-text-muted border-border'
+          }`}
+        >
+          {cancelledCount} Cancelled
         </button>
       </div>
 

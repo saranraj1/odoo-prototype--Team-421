@@ -1,4 +1,4 @@
-﻿import { apiClient } from '../client';
+import { apiClient } from '../client';
 import type { DealBilling } from '../types';
 
 export const billingApi = {
@@ -30,4 +30,15 @@ export const billingApi = {
     });
     return apiClient(`/odoo/subscriptions?${qs.toString()}`);
   },
+
+  cancelSubscription: (
+    dealId: string,
+    subscriptionId: number | string = 101,
+    payload: { reason?: string } = {}
+  ): Promise<any> =>
+    apiClient(`/deals/${dealId}/billing/subscriptions/${subscriptionId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };
+
