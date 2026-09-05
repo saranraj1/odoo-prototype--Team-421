@@ -254,6 +254,41 @@ Our four-person engineering team divided responsibilities with strict interface 
 
 ---
 
+## Running the Platform
+
+### 1. Run Backend Server (FastAPI Decision Engine Gateway)
+```bash
+# Option A: Dedicated backend runner
+python run_backend.py
+
+# Option B: Direct uvicorn module
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Option C: Windows batch file
+.\run_backend.bat
+
+# Option D: Via npm
+npm run backend
+```
+* Interactive API Documentation (Swagger UI): `http://127.0.0.1:8000/docs`
+* Health Check: `http://127.0.0.1:8000/health`
+
+### 2. Run Frontend Web App (React + Vite)
+```bash
+cd frontend
+npm run dev
+# Or from root:
+npm run dev
+```
+* Web Application: `http://localhost:5173`
+
+### 3. Run Everything Together
+```bash
+python run_local.py
+```
+
+---
+
 ## Testing & Verification
 
 The core governance algorithms are fully covered by automated tests that run completely offline without external database or Odoo dependencies:

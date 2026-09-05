@@ -226,6 +226,7 @@ class PortalController(http.Controller):
         type='http',
         auth='public',
         methods=['GET'],
+        cors='*',
         csrf=False
     )
     def portal_get_deal(self, order_id: int, **kwargs) -> Response:
@@ -349,10 +350,11 @@ class PortalController(http.Controller):
         return self._json_response(payload, status=200)
 
     @http.route(
-        '/dealflow/portal/negotiate',
+        ['/dealflow/portal/negotiate', '/customer/negotiate'],
         type='http',
         auth='public',
         methods=['POST'],
+        cors='*',
         csrf=False
     )
     def portal_submit_negotiation(self, **kwargs) -> Response:

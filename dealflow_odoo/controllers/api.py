@@ -249,14 +249,40 @@ class DealFlowApiController(http.Controller):
     # -------------------------------------------------------------------------
 
     @http.route(
+        "/api/dealflow/health",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        cors="*",
+        csrf=False,
+    )
+    def health_check(self, **_kwargs) -> Any:
+        """GET /api/dealflow/health
+
+        Readiness and liveness probe for monitoring, orchestrators, and frontend clients.
+        """
+        from datetime import datetime, timezone
+        return self._json_response(
+            {
+                "success": True,
+                "status": "healthy",
+                "service": "DealFlow360 Odoo Integration",
+                "version": "18.0.1.0.0",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            status=200,
+        )
+
+    @http.route(
         "/api/dealflow/order/<int:order_id>/context",
         type="http",
         auth="public",
-        methods=["POST"],
+        methods=["GET", "POST"],
+        cors="*",
         csrf=False,
     )
     def order_context(self, order_id: int, **_kwargs) -> Any:
-        """POST /api/dealflow/order/<int:order_id>/context
+        """GET/POST /api/dealflow/order/<int:order_id>/context
 
         Retrieves complete DealContextDTO for the given order.
         """
@@ -270,10 +296,32 @@ class DealFlowApiController(http.Controller):
             return self._handle_error(exc, f"order_context({order_id})")
 
     @http.route(
+        "/api/dealflow/order/<int:order_id>/evaluate",
+        type="http",
+        auth="public",
+        methods=["GET", "POST"],
+        cors="*",
+        csrf=False,
+    )
+    def evaluate_order(self, order_id: int, **_kwargs) -> Any:
+        """GET/POST /api/dealflow/order/<int:order_id>/evaluate
+
+        Executes complete Deal Guardian governance evaluation for the quotation.
+        """
+        try:
+            self._authenticate_request()
+            service = self._get_service()
+            result = service.evaluate_deal(order_id)
+            return self._json_response({"success": True, "data": result}, status=200)
+        except Exception as exc:
+            return self._handle_error(exc, f"evaluate_order({order_id})")
+
+    @http.route(
         "/api/dealflow/order/<int:order_id>/apply_approved_change",
         type="http",
         auth="public",
         methods=["POST"],
+        cors="*",
         csrf=False,
     )
     def apply_approved_change(self, order_id: int, **_kwargs) -> Any:
@@ -296,6 +344,7 @@ class DealFlowApiController(http.Controller):
         type="http",
         auth="public",
         methods=["POST"],
+        cors="*",
         csrf=False,
     )
     def confirm_order(self, order_id: int, **_kwargs) -> Any:
@@ -318,6 +367,7 @@ class DealFlowApiController(http.Controller):
         type="http",
         auth="public",
         methods=["POST"],
+        cors="*",
         csrf=False,
     )
     def apply_fulfillment(self, order_id: int, **_kwargs) -> Any:
@@ -340,6 +390,7 @@ class DealFlowApiController(http.Controller):
         type="http",
         auth="public",
         methods=["POST"],
+        cors="*",
         csrf=False,
     )
     def create_invoice(self, order_id: int, **_kwargs) -> Any:

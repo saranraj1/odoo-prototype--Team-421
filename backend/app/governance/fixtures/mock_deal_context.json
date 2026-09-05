@@ -1,0 +1,57 @@
+{
+  "deal_id": "d7b9c1e0-8a2b-4c5d-9e6f-1a2b3c4d5e6f",
+  "odoo_sale_order_id": 1024,
+  "order_name": "SO001024",
+  "customer": {
+    "odoo_partner_id": 58,
+    "name": "Acme Corporation",
+    "tier": "Gold",
+    "email": "procurement@acme.com",
+    "company_name": "Acme Corp"
+  },
+  "lines": [
+    {
+      "odoo_line_id": 201,
+      "odoo_product_id": 72,
+      "product_name": "Enterprise Laptop Pro",
+      "category_name": "Hardware",
+      "odoo_category_id": 8,
+      "quantity": 10.0,
+      "price_unit": 50000.0,
+      "cost_unit": 38000.0,
+      "discount_pct": 12.0,
+      "subtotal": 440000.0,
+      "margin_amount": 60000.0,
+      "margin_pct": 13.64,
+      "is_recurring": false,
+      "recurring_interval": null
+    },
+    {
+      "odoo_line_id": 202,
+      "odoo_product_id": 85,
+      "product_name": "Architecture Setup Service",
+      "category_name": "Services",
+      "odoo_category_id": 12,
+      "quantity": 1.0,
+      "price_unit": 100000.0,
+      "cost_unit": 70000.0,
+      "discount_pct": 18.0,
+      "subtotal": 82000.0,
+      "margin_amount": 12000.0,
+      "margin_pct": 14.63,
+      "is_recurring": false,
+      "recurring_interval": null
+    }
+  ],
+  "totals": {
+    "amount_untaxed": 522000.0,
+    "total_discount_amount": 78000.0,
+    "projected_margin_amount": 72000.0,
+    "projected_margin_pct": 13.79
+  },
+  "status": "DRAFT",
+  "approval_state": "DRAFT",
+  "stalled_days": 1,
+  "currency": "INR",
+  "metadata": {}
+}

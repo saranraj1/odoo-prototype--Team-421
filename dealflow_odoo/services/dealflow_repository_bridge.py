@@ -93,14 +93,15 @@ def _try_load_repositories() -> bool:
     try:
         this_dir = os.path.dirname(os.path.abspath(__file__))          # services/
         addon_dir = os.path.dirname(this_dir)                           # dealflow_odoo/
-        module_root = os.path.dirname(addon_dir)                        # dealflow_odoo-main/
-        workspace_root = os.path.dirname(module_root)                   # workspace root
+        module_root = os.path.dirname(addon_dir)                        # repo root (e.g. c:\Hackathon\odoo)
+        workspace_root = os.path.dirname(module_root)                   # parent root
         env_override = os.getenv("DEALFLOW_WORKSPACE_ROOT")
         if env_override and os.path.isdir(env_override):
             workspace_root = env_override
 
-        if workspace_root not in sys.path:
-            sys.path.insert(0, workspace_root)
+        for candidate_path in (module_root, workspace_root):
+            if candidate_path and candidate_path not in sys.path and os.path.isdir(candidate_path):
+                sys.path.insert(0, candidate_path)
 
         from repositories import (
             ApprovalRepository,
@@ -359,12 +360,15 @@ class DealFlowRepositoryBridge:
     def record_risk_assessment(
         self,
         deal_id: str,
-        risk_dict: Dict[str, Any],
+        risk_dict: Optional[Dict[str, Any]] = None,
+        risk_assessment_dict: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Write a risk assessment + explainable factor rows."""
+        effective_dict = risk_dict or risk_assessment_dict or {}
         def _write():
             factors = []
-            for f in risk_dict.get("factors", []):
+            for f in effective_dict.get("factors", []):
                 factors.append(
                     _RiskFactorDTO(
                         factor_type=f.get("factor_type", f.get("type", "DISCOUNT_SEVERITY")),
@@ -378,12 +382,12 @@ class DealFlowRepositoryBridge:
 
             assessment = _RiskAssessmentDTO(
                 deal_id=deal_id,
-                risk_score=float(risk_dict.get("risk_score", 0.0)),
-                severity=str(risk_dict.get("severity", "LOW")).upper(),
-                decision=str(risk_dict.get("decision", "AUTO_APPROVED")).upper(),
+                risk_score=float(effective_dict.get("risk_score", effective_dict.get("score", 0.0))),
+                severity=str(effective_dict.get("severity", "LOW")).upper(),
+                decision=str(effective_dict.get("decision", "AUTO_APPROVED")).upper(),
                 factors=factors,
-                trigger_type=risk_dict.get("trigger_type", "SYSTEM_EVALUATION"),
-                policy_version=risk_dict.get("policy_version", "v1.0"),
+                trigger_type=effective_dict.get("trigger_type", "SYSTEM_EVALUATION"),
+                policy_version=effective_dict.get("policy_version", "v1.0"),
             )
             return self._risk_repo.save_assessment(assessment)
 
@@ -411,21 +415,47 @@ class DealFlowRepositoryBridge:
         action: str,
         actor_user_id: int,
         reason: Optional[str] = None,
+        note: Optional[str] = None,
+        actor_name: Optional[str] = None,
+        conditions: Optional[Any] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Record an approval, rejection, or return action."""
+        effective_reason = reason or note
         def _write():
             return self._approval_repo.record_action(
                 request_id=request_id,
                 actor_user_id=actor_user_id,
                 action=action.upper(),
-                reason=reason,
+                reason=effective_reason,
             )
 
         return self._safe("record_approval_action", _write)
 
+    def log_audit_event(
+        self,
+        deal_id: str,
+        event_type: str,
+        actor_role: str = "Deal Guardian",
+        summary: str = "",
+        details: Optional[str] = None,
+        actor_id: Optional[int] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Convenience method for Deal Guardian audit logging."""
+        return self.append_audit_event(
+            operation=event_type,
+            deal_id=deal_id,
+            actor=actor_role,
+            actor_id=actor_id or 1,
+            result="SUCCESS",
+            details={"summary": summary, "details": details or ""},
+        )
+
     # -----------------------------------------------------------------------
     # 4. Customer Negotiation
     # -----------------------------------------------------------------------
+
 
     def record_negotiation(
         self,

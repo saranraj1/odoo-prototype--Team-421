@@ -105,6 +105,9 @@ class MockRecordSet:
         return [getattr(r, field_name) for r in self._records if hasattr(r, field_name)]
 
     def with_context(self, *args: Any, **kwargs: Any) -> MockRecordSet:
+        for r in self._records:
+            if hasattr(r, "with_context"):
+                r.with_context(*args, **kwargs)
         return self
 
     def sudo(self, *args: Any, **kwargs: Any) -> MockRecordSet:
@@ -138,6 +141,11 @@ class MockBaseRecord:
         return self
 
     def with_context(self, *args: Any, **kwargs: Any) -> MockBaseRecord:
+        new_ctx = dict(getattr(self, "_context", {}))
+        if args and isinstance(args[0], dict):
+            new_ctx.update(args[0])
+        new_ctx.update(kwargs)
+        self._context = new_ctx
         return self
 
     def sudo(self, *args: Any, **kwargs: Any) -> MockBaseRecord:
@@ -625,8 +633,11 @@ class MockSaleOrder(MockBaseRecord):
             )
             for l in self.order_line if not getattr(l, "display_type", False)
         )
-        if (self.dealflow_locked or exceeds_threshold or has_category_breach) and self.dealflow_approval_state != APPROVAL_STATE_APPROVED:
-            raise AuthorizationError("Order locked pending DealFlow approval")
+        ctx = getattr(self, "_context", {}) or {}
+        bypass = ctx.get("dealflow_bypass_check", False)
+        if not bypass:
+            if (self.dealflow_locked or exceeds_threshold or has_category_breach) and self.dealflow_approval_state != APPROVAL_STATE_APPROVED:
+                raise AuthorizationError("Order locked pending DealFlow approval")
 
         self.state = "sale"
         return True

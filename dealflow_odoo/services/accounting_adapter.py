@@ -62,8 +62,13 @@ class AccountingAdapter:
             odoo_client: Optional RPC client connection to Odoo.
             env: Optional native Odoo ORM environment (when executed inside Odoo).
         """
-        self.odoo_client = odoo_client
-        self.env = env
+        # Defensively detect if first positional argument is an Odoo Environment
+        if env is None and odoo_client is not None and not hasattr(odoo_client, "execute_kw"):
+            self.env = odoo_client
+            self.odoo_client = None
+        else:
+            self.odoo_client = odoo_client
+            self.env = env
         # In-memory storage for standalone unit tests / simulation runs
         self._mock_orders: Dict[int, Dict[str, Any]] = {}
         self._mock_invoices: Dict[int, Dict[str, Any]] = {}
@@ -451,7 +456,7 @@ class AccountingAdapter:
             return [self.get_invoice(inv.id) for inv in invoices]
 
         # 2. Odoo RPC Client execution
-        if self.odoo_client is not None:
+        if self.odoo_client is not None and hasattr(self.odoo_client, "execute_kw"):
             orders = self.odoo_client.execute_kw(
                 "sale.order",
                 "read",
