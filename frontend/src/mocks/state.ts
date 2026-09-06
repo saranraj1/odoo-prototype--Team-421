@@ -47,6 +47,11 @@ function getStoredDeals(fallback: any[]): any[] {
   try {
     const raw = localStorage.getItem(STORAGE_DEALS_KEY);
     let deals = raw ? JSON.parse(raw) : [...fallback];
+    // If stored deals is outdated (< 50 items) but fallback has full 160 realistic deals, auto-upgrade
+    if (deals.length < 50 && fallback.length >= 50) {
+      deals = [...fallback];
+      saveStoredDeals(deals);
+    }
     // Cross-heal: if any workspace in storage was marked CONFIRMED, synchronize deals list
     const rawWs = localStorage.getItem(STORAGE_WORKSPACES_KEY);
     if (rawWs) {
@@ -80,7 +85,12 @@ function getStoredApprovals(fallback: any[]): any[] {
   if (typeof window === 'undefined') return fallback;
   try {
     const raw = localStorage.getItem(STORAGE_APPROVALS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.length >= 50 || fallback.length < 50) {
+        return parsed;
+      }
+    }
   } catch {}
   return fallback;
 }
