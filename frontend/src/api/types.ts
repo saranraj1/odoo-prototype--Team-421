@@ -2,6 +2,7 @@ export type DealStatus =
   | 'DRAFT' 
   | 'SENT' 
   | 'UNDER_NEGOTIATION' 
+  | 'PENDING_REP_VERIFICATION'
   | 'CONFIRMED' 
   | 'IN_FULFILLMENT' 
   | 'FULFILLED' 
@@ -15,20 +16,34 @@ export type ApprovalState =
   | 'EVALUATED_NO_APPROVAL' 
   | 'PENDING_MANAGER' 
   | 'PENDING_FINANCE' 
+  | 'PENDING_ADMIN'
   | 'APPROVED' 
   | 'REJECTED' 
   | 'RETURNED' 
-  | 'INVALIDATED';
+  | 'INVALIDATED'
+  | 'DRAFT'
+  | 'NONE';
 
-export type ApprovalLevel = 'NONE' | 'MANAGER' | 'MANAGER_AND_FINANCE';
+export type ApprovalLevel = 
+  | 'NONE' 
+  | 'MANAGER' 
+  | 'MANAGER_AND_FINANCE' 
+  | 'REP_ONLY' 
+  | 'MANAGER_ONLY' 
+  | 'FINANCE';
 
-export type RiskSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
+export type RiskSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
-export type HealthStatus = 'HEALTHY' | 'WATCH' | 'AT_RISK';
+export type HealthStatus = 'HEALTHY' | 'WATCH' | 'AT_RISK' | 'STALLED' | 'CRITICAL';
 
 export type RiskFactorType = 
   | 'DISCOUNT_EXCESS' 
+  | 'LINE_DISCOUNT_EXCESS'
+  | 'DISCOUNT_MARGIN'
   | 'MARGIN_EXPOSURE' 
+  | 'MARGIN_COMPRESSION'
+  | 'CUSTOMER_PAYMENT_TERMS'
+  | 'DEAL_SIZE_EXPOSURE'
   | 'INVENTORY_RISK' 
   | 'APPROVAL_DELAY' 
   | 'NEGOTIATION_PRESSURE';
@@ -38,7 +53,9 @@ export type NegotiationRequestType =
   | 'QTY_CHANGE' 
   | 'REMOVE_LINE' 
   | 'ADD_LINE' 
-  | 'COUNTER_DISCOUNT';
+  | 'COUNTER_DISCOUNT'
+  | 'COUNTER_AMOUNT'
+  | 'ADD_ITEM_REQUEST';
 
 export type NegotiationStatus = 'OPEN' | 'ACCEPTED' | 'REJECTED' | 'COUNTERED' | 'WITHDRAWN';
 
@@ -53,6 +70,11 @@ export type FulfillmentPlanStatus =
 export type RecommendationStatus = 'ACTIVE' | 'ADDED' | 'DISMISSED' | 'EXPIRED';
 
 export type AlertType = 
+  | 'DISCOUNT_BREACH' 
+  | 'MARGIN_EROSION' 
+  | 'PAYMENT_RISK' 
+  | 'SLA_BREACH' 
+  | 'UNPROMOTED_DISCOUNT'
   | 'STALLED_DEAL' 
   | 'DISCOUNT_ANOMALY' 
   | 'DELIVERY_SLIPPAGE' 
@@ -63,6 +85,7 @@ export type AlertStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
 export type NextBestActionType = 
   | 'FINANCE_APPROVAL_REQUIRED' 
   | 'MANAGER_APPROVAL_REQUIRED' 
+  | 'ADMIN_APPROVAL_REQUIRED'
   | 'REDUCE_DISCOUNT' 
   | 'RESTORE_MARGIN' 
   | 'REAPPROVAL_REQUIRED' 
@@ -73,10 +96,13 @@ export type NextBestActionType =
   | 'SEND_TO_CUSTOMER' 
   | 'FOLLOW_UP_CUSTOMER' 
   | 'CONFIRM_ORDER' 
+  | 'ORDER_CONFIRMED'
+  | 'REVIEW_PROPOSAL'
   | 'AWAITING_APPROVER' 
   | 'NONE';
 
-export type PortalStatus = 'SENT' | 'UNDER_NEGOTIATION' | 'UNDER_REVIEW' | 'CONFIRMED' | 'CLOSED';
+export type PortalStatus = 'SENT' | 'UNDER_NEGOTIATION' 
+  | 'PENDING_REP_VERIFICATION'| 'UNDER_REVIEW' | 'CONFIRMED' | 'CLOSED';
 
 export interface ApiErrorEnvelope {
   error: {
@@ -208,14 +234,21 @@ export interface DealHealth {
 export interface DealRecommendation {
   id: string;
   product_name: string;
-  recommendation_type: string;
+  recommendation_type?: string;
   score: number;
-  margin_delta_amount: number;
-  margin_delta_pct: number;
-  unit_price_cache: number;
+  margin_delta_amount?: number;
+  margin_delta_pct?: number;
+  unit_price_cache?: number;
   reason: string;
-  is_promoted: boolean;
+  is_promoted?: boolean;
   status: RecommendationStatus;
+  product_id?: number;
+  category?: string;
+  list_price?: number;
+  unit_cost?: number;
+  recommended_discount_pct?: number;
+  margin_impact?: number;
+  margin_delta_pts?: number;
 }
 
 export interface FulfillmentPlanLine {
@@ -272,8 +305,10 @@ export interface SubscriptionItem {
   product_name: string;
   plan_name: string;
   cadence: string;
-  status: string;
+  status?: string;
   next_billing_date?: string;
+  next_invoice_date?: string;
+  past_invoices_count?: number;
   schedule: Array<{
     period_start: string;
     period_end: string;
@@ -285,6 +320,12 @@ export interface SubscriptionItem {
 
 export interface DealBilling {
   one_time_lines: any[];
+  schedules?: Array<{
+    id: string;
+    cadence: string;
+    next_bill_date?: string;
+    amount: number;
+  }>;
   recurring_lines: Array<{
     product_name: string;
     plan_name: string;
@@ -302,8 +343,11 @@ export interface NegotiationRequest {
   type: NegotiationRequestType;
   status: NegotiationStatus;
   line_id?: number | null;
+  product_id?: number | null;
+  product_name?: string;
   line_name?: string;
   message?: string;
+  requested_qty?: number;
   requested_value?: number;
   created_at: string;
 }
@@ -311,9 +355,11 @@ export interface NegotiationRequest {
 export interface NegotiationComment {
   id: string;
   line_id?: number | null;
+  author_id?: number | string;
   author_name: string;
   author_role: string;
-  body: string;
+  body?: string;
+  text?: string;
   is_internal: boolean;
   created_at: string;
 }
@@ -325,9 +371,11 @@ export interface DealNegotiation {
 
 export interface NextBestAction {
   type: NextBestActionType;
-  priority: number;
+  priority: number | string;
   title: string;
-  explanation: string;
+  explanation?: string;
+  description?: string;
+  cta_text?: string;
   payload?: any;
   cta_endpoint?: string;
 }
@@ -370,6 +418,8 @@ export interface DealWorkspace {
     name: string;
     tier_code?: string;
     payment_term_days: number;
+    past_orders_count?: number;
+    past_orders_spend?: number;
   };
   quote: {
     lines: DealLine[];
@@ -442,3 +492,8 @@ export interface NotificationItem {
 }
 
 
+
+
+export type RecommendationItem = DealRecommendation;
+export type DealListItem = any;
+export type ApprovalInboxItem = any;

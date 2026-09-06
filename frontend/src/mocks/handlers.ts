@@ -837,7 +837,7 @@ export const handlers = [
     const newReq = {
       id: reqId,
       type: body.type || 'COUNTER_DISCOUNT',
-      status: 'OPEN',
+      status: 'OPEN' as any,
       line_id: body.line_id || null,
       product_id: body.product_id || null,
       product_name: body.product_name || (body.line_id ? ws.quote.lines.find(l => l.odoo_line_id === body.line_id)?.product_name : 'Quotation Proposal'),
@@ -2017,9 +2017,9 @@ export const handlers = [
     if (ws.billing?.subscriptions) {
       const sub = ws.billing.subscriptions.find((s) => s.id === subId) || ws.billing.subscriptions[0];
       if (sub) {
-        sub.status = 'CANCELLED';
-        if (Array.isArray(sub.schedule)) {
-          sub.schedule.forEach((item) => {
+        (sub as any).status = 'CANCELLED';
+        if (Array.isArray((sub as any).schedule)) {
+          (sub as any).schedule.forEach((item: any) => {
             item.status = 'CANCELLED';
           });
         }
@@ -2067,8 +2067,8 @@ export const handlers = [
         if (ws.billing?.subscriptions) {
           const s = ws.billing.subscriptions.find((x) => x.id === subId);
           if (s) {
-            s.status = 'CANCELLED';
-            s.schedule?.forEach((item) => {
+            (s as any).status = 'CANCELLED';
+            (s as any).schedule?.forEach((item: any) => {
               item.status = 'CANCELLED';
             });
           }
