@@ -97,12 +97,14 @@ export const QuotationsListPage: React.FC = () => {
   const deals = listData?.items || [];
 
   const getDealKanbanStatus = (d: any): string => {
-    if (d.status === 'CONFIRMED' || d.status === 'IN_FULFILLMENT') return 'CONFIRMED';
-    if (d.status === 'UNDER_NEGOTIATION' || d.approval_state === 'UNDER_NEGOTIATION') return 'UNDER_NEGOTIATION';
-    if (d.status === 'APPROVED' || d.approval_state === 'APPROVED') return 'APPROVED';
-    if (d.status === 'DRAFT' || d.approval_state === 'DRAFT' || d.approval_state === 'NOT_EVALUATED') return 'DRAFT';
-    if (d.status === 'PENDING_APPROVAL' || d.approval_state?.startsWith('PENDING_')) return 'PENDING_APPROVAL';
-    return d.status || 'DRAFT';
+    const s = d.status || d.deal?.status;
+    const a = d.approval_state || d.deal?.approval_state;
+    if (s === 'CONFIRMED' || s === 'IN_FULFILLMENT' || a === 'CONFIRMED') return 'CONFIRMED';
+    if (s === 'UNDER_NEGOTIATION' || a === 'UNDER_NEGOTIATION') return 'UNDER_NEGOTIATION';
+    if (s === 'APPROVED' || a === 'APPROVED') return 'APPROVED';
+    if (s === 'DRAFT' || a === 'DRAFT' || a === 'NOT_EVALUATED') return 'DRAFT';
+    if (s === 'PENDING_APPROVAL' || a?.startsWith('PENDING_')) return 'PENDING_APPROVAL';
+    return s || 'DRAFT';
   };
 
   const kanbanColumns = [

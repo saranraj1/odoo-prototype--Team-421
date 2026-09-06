@@ -20,10 +20,10 @@ export const DemoControls: React.FC = () => {
       if (magicItem?.token) {
         window.open(`/portal/verify?token=${encodeURIComponent(magicItem.token)}`, '_blank');
       } else {
-        window.open('/portal/login', '_blank');
+        window.open('/login', '_blank');
       }
     } catch {
-      window.open('/portal/login', '_blank');
+      window.open('/login', '_blank');
     }
   };
 

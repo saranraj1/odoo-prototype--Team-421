@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/features/auth/authStore';
 import { dealsApi } from '@/api/endpoints/deals';
 import { negotiationApi } from '@/api/endpoints/negotiation';
 import { recommendationsApi } from '@/api/endpoints/recommendations';
@@ -14,7 +15,7 @@ import { NextBestActionBar } from '@/components/data/NextBestActionBar';
 import { StatusChip } from '@/components/data/StatusChip';
 import { Timeline } from '@/components/data/Timeline';
 import { Button } from '@/components/ui/button';
-import { Check, Send, CheckCircle2, XCircle, ArrowLeft, RefreshCw, MessageSquare, Truck, CreditCard, History, Building2 } from 'lucide-react';
+import { Check, Send, CheckCircle2, XCircle, ArrowLeft, ArrowRight, RefreshCw, MessageSquare, Truck, CreditCard, History, Building2, PackagePlus, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { formatMoney, formatAbsoluteDate } from '@/lib/format';
 import { ACME_HISTORICAL_ORDERS, ACME_CUSTOMER_PROFILE } from '@/features/portal/data/customerHistory';
@@ -24,6 +25,7 @@ export const QuotationWorkspacePage: React.FC = () => {
   const { id = 'deal_d1024_acme' } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
 
   const [highlightedLineId, setHighlightedLineId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'negotiation' | 'fulfillment' | 'billing' | 'timeline'>('negotiation');
@@ -74,6 +76,9 @@ export const QuotationWorkspacePage: React.FC = () => {
     mutationFn: () => dealsApi.submit(id),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.deals.workspace(id), updated);
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['controlTower'] });
     },
   });
 
@@ -88,6 +93,7 @@ export const QuotationWorkspacePage: React.FC = () => {
     mutationFn: () => dealsApi.send(id),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.deals.workspace(id), updated);
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
     },
   });
 
@@ -95,6 +101,11 @@ export const QuotationWorkspacePage: React.FC = () => {
     mutationFn: () => dealsApi.confirm(id),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.deals.workspace(id), updated);
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['controlTower'] });
+      queryClient.invalidateQueries({ queryKey: ['control-tower'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
     },
   });
 
@@ -102,6 +113,9 @@ export const QuotationWorkspacePage: React.FC = () => {
     mutationFn: (reason: string) => dealsApi.cancel(id, reason),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.deals.workspace(id), updated);
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['controlTower'] });
       setCancelOpen(false);
     },
   });
@@ -110,7 +124,39 @@ export const QuotationWorkspacePage: React.FC = () => {
     mutationFn: (val: number) => dealsApi.patch(id, { order_discount_pct: val }),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.deals.workspace(id), updated);
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
       setIsSaved(true);
+    },
+  });
+
+  const acceptProposalMutation = useMutation({
+    mutationFn: (req: any) =>
+      dealsApi.acceptProposalAndAddItem(id, {
+        request_id: req.id,
+        product_id: req.product_id,
+        qty: req.requested_qty || 1,
+        discount_pct: 0,
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.deals.workspace(id), updated);
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+
+  // Accept/Decline counter-offer negotiation (works for both Sales Rep and Sales Manager)
+  const respondNegotiationMutation = useMutation({
+    mutationFn: ({ reqId, decision, req }: { reqId: string; decision: 'ACCEPT' | 'REJECT'; req?: any }) =>
+      negotiationApi.respond(id, reqId, {
+        decision,
+        actor_name: user?.name || 'Sales Rep',
+        actor_role: user?.role || 'SALES_REP',
+        type: req?.type,
+        target_amount: req?.target_amount,
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.deals.workspace(id), updated);
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      queryClient.invalidateQueries({ queryKey: ['approvals'] });
     },
   });
 
@@ -123,12 +169,27 @@ export const QuotationWorkspacePage: React.FC = () => {
   }
 
   const { deal, customer, quote, recommendations, timeline, next_best_action, approval } = workspace;
-  const canSend = approval.state === 'APPROVED' || approval.state === 'EVALUATED_NO_APPROVAL';
-  const canConfirm = canSend && deal.status !== 'CONFIRMED';
+  const isPreApproved = approval.state === 'APPROVED' || deal.approval_state === 'APPROVED';
+  const canSend = deal.status !== 'CONFIRMED';
+  const canConfirm = (deal.approval_state === 'APPROVED' || approval.state === 'APPROVED') && deal.status !== 'CONFIRMED';
 
   const handleExecuteNextAction = (action: NextBestAction) => {
     if (action.cta_endpoint) {
       navigate(action.cta_endpoint);
+    } else if (action.type === 'CONFIRM_ORDER') {
+      confirmMutation.mutate();
+    } else if (action.type === 'SEND_TO_CUSTOMER') {
+      sendMutation.mutate();
+    } else if (action.type === 'MANAGER_APPROVAL_REQUIRED' || action.type === 'FINANCE_APPROVAL_REQUIRED') {
+      navigate(`/approvals/${deal.id}`);
+    } else if (action.type === 'REDUCE_DISCOUNT' || action.type === 'REAPPROVAL_REQUIRED') {
+      submitMutation.mutate();
+    } else {
+      if (['PENDING_MANAGER', 'PENDING_FINANCE'].includes(deal.approval_state)) {
+        navigate(`/approvals/${deal.id}`);
+      } else {
+        submitMutation.mutate();
+      }
     }
   };
 
@@ -211,24 +272,28 @@ export const QuotationWorkspacePage: React.FC = () => {
             Re-evaluate
           </Button>
 
-          {['NOT_EVALUATED', 'DRAFT', 'RETURNED', 'INVALIDATED'].includes(deal.approval_state) ? (
+          {['NONE', 'NOT_EVALUATED', 'DRAFT', 'RETURNED', 'INVALIDATED'].includes(deal.approval_state) ? (
             <Button
               size="sm"
               variant="default"
               onClick={() => submitMutation.mutate()}
               disabled={submitMutation.isPending}
-              className="text-xs font-bold"
+              className="gap-1.5 text-xs font-bold shadow-sm"
+              title="Submit quotation into approval review queue"
             >
-              Submit for Approval
+              <span>Submit for Approval</span>
+              <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           ) : deal.approval_state === 'PENDING_MANAGER' || deal.approval_state === 'PENDING_FINANCE' ? (
             <Button
               size="sm"
-              variant="secondary"
+              variant="default"
               onClick={() => navigate(`/approvals/${deal.id}`)}
-              className="gap-1.5 text-xs font-semibold"
+              className="gap-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
+              title="Click to open approval decision workflow"
             >
-              Pending Approval
+              <span>Proceed to Approval Decision</span>
+              <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           ) : deal.status === 'SENT' ? (
             <Button
@@ -258,7 +323,8 @@ export const QuotationWorkspacePage: React.FC = () => {
             variant="success"
             onClick={() => confirmMutation.mutate()}
             disabled={confirmMutation.isPending || !canConfirm}
-            className="gap-1.5 text-xs font-bold"
+            className="gap-1.5 text-xs font-bold shadow-sm"
+            title="Confirm order and synchronize with Odoo ERP"
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
             Confirm Order
@@ -275,6 +341,99 @@ export const QuotationWorkspacePage: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Customer Item Proposal Banner */}
+      {workspace.negotiation?.open_requests && workspace.negotiation.open_requests.length > 0 && (
+        <div className="rounded-card border-2 border-amber-400 bg-amber-50/90 dark:bg-amber-950/40 p-4 space-y-3 shadow-xs">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-white text-xs font-bold">!</span>
+              <h3 className="text-sm font-bold text-amber-950 dark:text-amber-200">
+                Customer Proposal Received
+              </h3>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-200 text-amber-900 border border-amber-300">
+              {user?.role === 'SALES_MANAGER' ? 'Awaiting Sales Manager Review' : 'Awaiting Sales Rep Review & Warehouse Stock Add'}
+            </span>
+          </div>
+          {workspace.negotiation.open_requests.map((req: any) => (
+            <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-md bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-xs">
+              <div>
+                <p className="font-bold text-text-primary">
+                  {req.type === 'ADD_ITEM_REQUEST'
+                    ? `Requested Adding: ${req.requested_qty || 1}x ${req.product_name || req.line_name}`
+                    : req.type === 'COUNTER_AMOUNT'
+                    ? `Customer Counter Amount: ₹${(req.requested_value || 0).toLocaleString('en-IN')}`
+                    : `Proposed Discount Concession: ${req.requested_value}%`}
+                </p>
+                <p className="text-text-secondary mt-0.5">{req.message}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {req.type === 'ADD_ITEM_REQUEST' ? (
+                  <Button
+                    size="sm"
+                    variant="success"
+                    onClick={() => acceptProposalMutation.mutate(req)}
+                    disabled={acceptProposalMutation.isPending}
+                    className="gap-1.5 text-xs font-bold shadow-xs"
+                  >
+                    <PackagePlus className="h-3.5 w-3.5" />
+                    Accept & Add from Warehouse Stock
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="success"
+                      onClick={() => respondNegotiationMutation.mutate({ reqId: req.id, decision: 'ACCEPT', req })}
+                      disabled={respondNegotiationMutation.isPending}
+                      className="gap-1.5 text-xs font-bold shadow-xs"
+                    >
+                      <ThumbsUp className="h-3.5 w-3.5" />
+                      Accept Customer Negotiation
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => respondNegotiationMutation.mutate({ reqId: req.id, decision: 'REJECT' })}
+                      disabled={respondNegotiationMutation.isPending}
+                      className="gap-1.5 text-xs font-semibold"
+                    >
+                      <ThumbsDown className="h-3.5 w-3.5" />
+                      Decline
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Customer Confirmed Verification Banner */}
+      {(deal.status === 'PENDING_REP_VERIFICATION' || (deal.customer_confirmed_pending && deal.status !== 'CONFIRMED')) && (
+        <div className="rounded-card border-2 border-emerald-400 bg-emerald-50/90 dark:bg-emerald-950/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div>
+            <h3 className="text-sm font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              Customer Accepted & Confirmed Quotation
+            </h3>
+            <p className="text-xs text-emerald-800 dark:text-emerald-300 mt-0.5">
+              Buyer confirmed order on customer portal. Sales Rep must verify line items and submit into internal multi-tier governance review (Sales Manager → Finance Team → Executive Admin).
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="default"
+            onClick={() => submitMutation.mutate()}
+            disabled={submitMutation.isPending}
+            className="gap-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shrink-0"
+          >
+            <span>Verify & Submit to Manager</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
 
       {/* 2-Column Split: 65% Quote, 35% Guardian Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -308,11 +467,10 @@ export const QuotationWorkspacePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('negotiation')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
-                  activeTab === 'negotiation'
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${activeTab === 'negotiation'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-bold'
                     : 'text-text-muted hover:text-text-primary hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
-                }`}
+                  }`}
               >
                 <MessageSquare className="h-3.5 w-3.5" />
                 Customer Negotiation
@@ -326,11 +484,10 @@ export const QuotationWorkspacePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('fulfillment')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
-                  activeTab === 'fulfillment'
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${activeTab === 'fulfillment'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-bold'
                     : 'text-text-muted hover:text-text-primary hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
-                }`}
+                  }`}
               >
                 <Truck className="h-3.5 w-3.5" />
                 Fulfillment &amp; Warehouse
@@ -339,11 +496,10 @@ export const QuotationWorkspacePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('billing')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
-                  activeTab === 'billing'
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${activeTab === 'billing'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-bold'
                     : 'text-text-muted hover:text-text-primary hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
-                }`}
+                  }`}
               >
                 <CreditCard className="h-3.5 w-3.5" />
                 Billing &amp; Subscriptions
@@ -352,11 +508,10 @@ export const QuotationWorkspacePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('timeline')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
-                  activeTab === 'timeline'
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${activeTab === 'timeline'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-bold'
                     : 'text-text-muted hover:text-text-primary hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
-                }`}
+                  }`}
               >
                 <History className="h-3.5 w-3.5" />
                 Audit Timeline
@@ -385,17 +540,21 @@ export const QuotationWorkspacePage: React.FC = () => {
                             <Button
                               size="sm"
                               variant="success"
-                              className="h-7 text-xs"
-                              onClick={() => negotiationApi.respond(id, r.id, { decision: 'ACCEPT' }).then(() => queryClient.invalidateQueries())}
+                              className="h-7 text-xs gap-1.5"
+                              onClick={() => respondNegotiationMutation.mutate({ reqId: r.id, decision: 'ACCEPT', req: r })}
+                              disabled={respondNegotiationMutation.isPending}
                             >
-                              Accept Counter
+                              <ThumbsUp className="h-3 w-3" />
+                              Accept
                             </Button>
                             <Button
                               size="sm"
                               variant="danger"
-                              className="h-7 text-xs"
-                              onClick={() => negotiationApi.respond(id, r.id, { decision: 'REJECT' }).then(() => queryClient.invalidateQueries())}
+                              className="h-7 text-xs gap-1.5"
+                              onClick={() => respondNegotiationMutation.mutate({ reqId: r.id, decision: 'REJECT' })}
+                              disabled={respondNegotiationMutation.isPending}
                             >
+                              <ThumbsDown className="h-3 w-3" />
                               Reject
                             </Button>
                           </div>
@@ -546,9 +705,8 @@ export const QuotationWorkspacePage: React.FC = () => {
                   </div>
                   <div className="text-right whitespace-nowrap">
                     <span className="font-bold tabular-nums text-text-primary block">{formatMoney(ord.total, ord.currency)}</span>
-                    <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold uppercase ${
-                      ord.status === 'DELIVERED' ? 'text-emerald-700 bg-emerald-50' : ord.status === 'COMPLETED' ? 'text-slate-700 bg-slate-100' : 'text-amber-700 bg-amber-50'
-                    }`}>
+                    <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold uppercase ${ord.status === 'DELIVERED' ? 'text-emerald-700 bg-emerald-50' : ord.status === 'COMPLETED' ? 'text-slate-700 bg-slate-100' : 'text-amber-700 bg-amber-50'
+                      }`}>
                       {ord.statusLabel}
                     </span>
                   </div>

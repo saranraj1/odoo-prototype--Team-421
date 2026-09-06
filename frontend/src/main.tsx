@@ -10,8 +10,7 @@ if (typeof window !== 'undefined' && window.location.hash) {
   const hashPath = window.location.hash.replace(/^#/, '');
   if (hashPath.startsWith('/')) {
     let cleanPath = hashPath;
-    if (hashPath === '/enterprise-login') cleanPath = '/login';
-    else if (hashPath === '/customer-login') cleanPath = '/portal/login';
+    if (hashPath === '/enterprise-login' || hashPath === '/customer-login' || hashPath === '/portal/login') cleanPath = '/login';
     window.history.replaceState(null, '', cleanPath);
   }
 }

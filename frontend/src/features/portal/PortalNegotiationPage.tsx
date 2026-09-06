@@ -90,9 +90,33 @@ export const PortalNegotiationPage: React.FC = () => {
         </div>
       </div>
 
+      {deal.portal_status === 'CONFIRMED' && (
+        <div className="rounded-card border-2 border-emerald-500/50 bg-emerald-50/90 dark:bg-emerald-950/40 p-4 text-xs text-emerald-900 dark:text-emerald-200 space-y-2 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+            <div>
+              <p className="font-bold text-sm text-emerald-950 dark:text-emerald-100">
+                Order Confirmed & Committed to Odoo ERP
+              </p>
+              <p className="text-emerald-800 dark:text-emerald-300 mt-0.5">
+                All internal governance approvals (Sales Rep, Sales Manager, Finance, and Executive Admin) are complete. An itemized invoice has been generated.
+              </p>
+            </div>
+          </div>
+          {deal.comments && deal.comments.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-emerald-200 dark:border-emerald-800/60 text-xs bg-white/60 dark:bg-slate-900/60 p-2.5 rounded">
+              <span className="font-bold text-emerald-950 dark:text-emerald-200">Admin Notification: </span>
+              <span className="text-emerald-900 dark:text-emerald-300">
+                {deal.comments[deal.comments.length - 1].text}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {deal.portal_status === 'UNDER_REVIEW' && (
         <div className="rounded-input border border-warning/40 bg-warning/15 p-3 text-xs text-warning">
-          <strong>Under Review:</strong> Your confirmation is currently awaiting internal management approval before final issuance.
+          <strong>Under Review:</strong> Your order confirmation has been received. Our sales representative is verifying the details before final management release.
         </div>
       )}
 

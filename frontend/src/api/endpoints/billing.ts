@@ -23,6 +23,9 @@ export const billingApi = {
     return apiClient(`/odoo/invoices?${qs.toString()}`);
   },
 
+  getInvoice: (id: number | string): Promise<any> =>
+    apiClient(`/odoo/invoices/${id}`),
+
   listSubscriptions: (params: Record<string, any> = {}): Promise<any[]> => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {

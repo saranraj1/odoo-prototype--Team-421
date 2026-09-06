@@ -8,8 +8,8 @@ import { Dialog } from '@/components/ui/dialog';
 import { HintStrip } from '@/components/data/HintStrip';
 import { configApi } from '@/api/endpoints/config';
 import { useMutation } from '@tanstack/react-query';
-import { Check, Sliders, ShieldCheck, Box, Settings, Users, UserPlus, KeyRound, Edit2, Trash2, Eye, EyeOff } from 'lucide-react';
-import { getStoredUsers, saveStoredUsers, type UserAccountData } from '@/mocks/fixtures/users';
+import { Check, Sliders, ShieldCheck, Box, Settings, Users, UserPlus, KeyRound, Edit2, Trash2, Eye, EyeOff, Building2, RotateCcw } from 'lucide-react';
+import { getStoredUsers, saveStoredUsers, INITIAL_MOCK_USERS, type UserAccountData } from '@/mocks/fixtures/users';
 import type { UserRole } from '@/lib/rbac';
 import { useAuthStore } from '@/features/auth/authStore';
 
@@ -28,24 +28,38 @@ export const ConfigLayout: React.FC = () => {
   // User Management State (Restricted strictly to System Administrator)
   const [userList, setUserList] = useState<UserAccountData[]>([]);
   const [showPasswords, setShowPasswords] = useState<Record<number, boolean>>({});
-  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [createInternalOpen, setCreateInternalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserAccountData | null>(null);
+  const [userFilter, setUserFilter] = useState<'all' | 'internal' | 'customer'>('all');
 
-  // Form states for new user
-  const [newUserName, setNewUserName] = useState('');
-  const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserRole, setNewUserRole] = useState<UserRole>('SALES_REP');
-  const [newUserPassword, setNewUserPassword] = useState('Password123!');
+  // Customer User Creation form state (STRICTLY CUSTOMER PORTAL)
+  const [custName, setCustName] = useState('');
+  const [custCompany, setCustCompany] = useState('');
+  const [custEmail, setCustEmail] = useState('');
+  const [custPassword, setCustPassword] = useState('Password123!');
+
+  // Internal User Creation form state (STRICTLY INTERNAL WORKSPACE)
+  const [intName, setIntName] = useState('');
+  const [intRole, setIntRole] = useState<'SALES_REP' | 'SALES_MANAGER' | 'FINANCE' | 'ADMIN'>('SALES_REP');
+  const [intEmail, setIntEmail] = useState('');
+  const [intPassword, setIntPassword] = useState('Password123!');
 
   // Form states for editing user
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
-  const [editRole, setEditRole] = useState<UserRole>('SALES_REP');
+  const [editRole, setEditRole] = useState<'SALES_REP' | 'SALES_MANAGER' | 'FINANCE' | 'ADMIN'>('SALES_REP');
+  const [editCompany, setEditCompany] = useState('');
   const [editPassword, setEditPassword] = useState('');
 
   const loadUsers = () => {
     const raw = getStoredUsers();
-    setUserList(Object.values(raw));
+    if (Object.keys(raw).length <= 7) {
+      saveStoredUsers(INITIAL_MOCK_USERS);
+      setUserList(Object.values(INITIAL_MOCK_USERS));
+    } else {
+      setUserList(Object.values(raw));
+    }
   };
 
   // Guard activeTab if user role changes or non-admin attempts to view users tab
@@ -61,38 +75,85 @@ export const ConfigLayout: React.FC = () => {
     }
   }, [isAdmin]);
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateCustomer = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserName.trim() || !newUserEmail.trim()) return;
+    if (!custName.trim() || !custEmail.trim()) return;
 
     const id = Date.now();
-    const newUser: UserAccountData = {
+    const emailPrefix = custEmail.split('@')[0].toLowerCase();
+    const newCustomer: UserAccountData = {
       id,
       odoo_user_id: id,
-      name: newUserName.trim(),
-      email: newUserEmail.trim(),
-      role: newUserRole,
-      password: newUserPassword.trim() || 'Password123!',
+      partner_id: id,
+      name: custName.trim(),
+      email: custEmail.trim(),
+      username: emailPrefix,
+      aliases: [
+        custName.toLowerCase(),
+        emailPrefix,
+        custName.toLowerCase().replace(/\s+/g, '.'),
+      ],
+      role: 'CUSTOMER',
+      password: custPassword.trim() || 'Password123!',
+      company_id: 1,
+      company_name: custCompany.trim() || 'Client Enterprise',
+      is_active: true,
+    };
+
+    const currentUsers = getStoredUsers();
+    currentUsers[`user_${id}`] = newCustomer;
+    saveStoredUsers(currentUsers);
+    loadUsers();
+    setCreateCustomerOpen(false);
+    setCustName('');
+    setCustCompany('');
+    setCustEmail('');
+    setCustPassword('Password123!');
+  };
+
+  const handleCreateInternal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!intName.trim() || !intEmail.trim()) return;
+
+    const id = Date.now();
+    const emailPrefix = intEmail.split('@')[0].toLowerCase();
+    const newInternalUser: UserAccountData = {
+      id,
+      odoo_user_id: id,
+      name: intName.trim(),
+      email: intEmail.trim(),
+      username: emailPrefix,
+      aliases: [
+        intName.toLowerCase(),
+        emailPrefix,
+        intName.toLowerCase().replace(/\s+/g, '.'),
+      ],
+      role: intRole,
+      password: intPassword.trim() || 'Password123!',
       company_id: 1,
       company_name: 'DealFlow Enterprise Inc',
       is_active: true,
     };
 
     const currentUsers = getStoredUsers();
-    currentUsers[`user_${id}`] = newUser;
+    currentUsers[`user_${id}`] = newInternalUser;
     saveStoredUsers(currentUsers);
     loadUsers();
-    setCreateUserOpen(false);
-    setNewUserName('');
-    setNewUserEmail('');
-    setNewUserPassword('Password123!');
+    setCreateInternalOpen(false);
+    setIntName('');
+    setIntEmail('');
+    setIntRole('SALES_REP');
+    setIntPassword('Password123!');
   };
 
   const handleOpenEdit = (user: UserAccountData) => {
     setEditingUser(user);
     setEditName(user.name);
     setEditEmail(user.email);
-    setEditRole(user.role);
+    if (user.role !== 'CUSTOMER') {
+      setEditRole(user.role as any);
+    }
+    setEditCompany(user.company_name || '');
     setEditPassword(user.password || 'Password123!');
   };
 
@@ -103,11 +164,15 @@ export const ConfigLayout: React.FC = () => {
     const currentUsers = getStoredUsers();
     const key = Object.keys(currentUsers).find((k) => currentUsers[k].id === editingUser.id);
     if (key) {
+      const isCustomer = editingUser.role === 'CUSTOMER';
       currentUsers[key] = {
         ...currentUsers[key],
         name: editName.trim(),
         email: editEmail.trim(),
-        role: editRole,
+        role: isCustomer ? 'CUSTOMER' : editRole,
+        company_name: isCustomer
+          ? (editCompany.trim() || 'Client Enterprise')
+          : (currentUsers[key].company_name || 'DealFlow Enterprise Inc'),
         password: editPassword.trim(),
       };
       saveStoredUsers(currentUsers);
@@ -156,15 +221,51 @@ export const ConfigLayout: React.FC = () => {
         actions={
           <div className="flex items-center gap-2">
             {isAdmin && activeTab === 'users' ? (
-              <Button
-                size="sm"
-                variant="default"
-                onClick={() => setCreateUserOpen(true)}
-                className="gap-1.5 font-bold shadow-xs"
-              >
-                <UserPlus className="h-4 w-4" />
-                Add New User
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    saveStoredUsers(INITIAL_MOCK_USERS);
+                    setUserList(Object.values(INITIAL_MOCK_USERS));
+                  }}
+                  className="gap-1.5 font-semibold text-brand border-brand/30 hover:bg-brand/10 shadow-2xs cursor-pointer"
+                  title="Reload all 31 realistic enterprise personas and customer accounts"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Load Realistic Users (31)
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setCustName('');
+                    setCustCompany('');
+                    setCustEmail('');
+                    setCustPassword('Password123!');
+                    setCreateCustomerOpen(true);
+                  }}
+                  className="gap-1.5 font-semibold text-emerald-700 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 shadow-2xs cursor-pointer"
+                >
+                  <Building2 className="h-4 w-4 text-emerald-600" />
+                  Add Customer User
+                </Button>
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => {
+                    setIntName('');
+                    setIntRole('SALES_REP');
+                    setIntEmail('');
+                    setIntPassword('Password123!');
+                    setCreateInternalOpen(true);
+                  }}
+                  className="gap-1.5 font-bold shadow-xs cursor-pointer"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Add Internal User
+                </Button>
+              </>
             ) : (
               <Button
                 size="sm"
@@ -278,15 +379,52 @@ export const ConfigLayout: React.FC = () => {
         <div className="space-y-6">
           <Card className="border-border bg-surface shadow-xs">
             <CardHeader className="pb-3 border-b border-border">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <CardTitle className="text-base font-bold flex items-center gap-2">
                     <Users className="h-4 w-4 text-brand" />
-                    Internal Team &amp; Customer Accounts
+                    Internal Team &amp; Customer Portal Accounts
                   </CardTitle>
                   <CardDescription>
-                    Administrator controls for creating and managing usernames, roles, and passwords across all personas.
+                    Administrator governance controls for provisioning usernames, roles, and passwords across internal and customer portal personas.
                   </CardDescription>
+                </div>
+                {/* Segmented Filter */}
+                <div className="flex items-center gap-1 bg-elevated p-1 rounded-lg border border-border shrink-0 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setUserFilter('all')}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                      userFilter === 'all'
+                        ? 'bg-white text-text-primary shadow-2xs'
+                        : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    All ({userList.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUserFilter('internal')}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                      userFilter === 'internal'
+                        ? 'bg-white text-text-primary shadow-2xs'
+                        : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    Internal ({userList.filter((u) => u.role !== 'CUSTOMER').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUserFilter('customer')}
+                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                      userFilter === 'customer'
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs'
+                        : 'text-emerald-700 hover:text-emerald-900'
+                    }`}
+                  >
+                    <Building2 className="h-3 w-3 text-emerald-600" />
+                    Customer ({userList.filter((u) => u.role === 'CUSTOMER').length})
+                  </button>
                 </div>
               </div>
             </CardHeader>
@@ -304,13 +442,35 @@ export const ConfigLayout: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {userList.map((user) => (
+                    {userList
+                      .filter((u) => {
+                        if (userFilter === 'internal') return u.role !== 'CUSTOMER';
+                        if (userFilter === 'customer') return u.role === 'CUSTOMER';
+                        return true;
+                      })
+                      .map((user) => (
                       <tr key={user.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3 font-semibold text-text-primary flex items-center gap-2">
-                          <div className="h-6 w-6 rounded-full bg-brand/10 text-brand flex items-center justify-center font-bold text-[10px]">
+                        <td className="px-4 py-3 font-semibold text-text-primary flex items-center gap-2.5">
+                          <div
+                            className={`h-7 w-7 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 ${
+                              user.role === 'CUSTOMER' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-brand/10 text-brand'
+                            }`}
+                          >
                             {user.name.charAt(0)}
                           </div>
-                          <span>{user.name}</span>
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-semibold text-slate-900 truncate">{user.name}</span>
+                            {user.role === 'CUSTOMER' && user.company_name ? (
+                              <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                                <Building2 className="h-3 w-3 text-emerald-600 inline shrink-0" />
+                                {user.company_name}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-text-muted font-normal">
+                                {user.company_name || 'DealFlow Enterprise Inc'}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 font-mono text-text-secondary">
                           {user.email}
@@ -329,7 +489,7 @@ export const ConfigLayout: React.FC = () => {
                                 : 'bg-slate-100 text-slate-800 border border-slate-200'
                             }`}
                           >
-                            {user.role}
+                            {user.role === 'CUSTOMER' ? 'CUSTOMER PORTAL' : user.role}
                           </span>
                         </td>
                         <td className="px-4 py-3 font-mono">
@@ -633,149 +793,287 @@ export const ConfigLayout: React.FC = () => {
         </div>
       )}
 
-      {/* Dialogs: Create & Edit User - STRICTLY ADMIN ONLY */}
+      {/* Dialogs: Create Customer, Create Internal & Edit User - STRICTLY ADMIN ONLY */}
       {isAdmin && (
         <>
+          {/* 1. Dialog: Create Customer User (STRICTLY CUSTOMER PORTAL - NO INTERNAL ROLES) */}
           <Dialog
-            open={createUserOpen}
-            onOpenChange={setCreateUserOpen}
-            title="Provision New User Account"
-            description="Create a new team member or manager account with credentials and role assignment."
+            open={createCustomerOpen}
+            onOpenChange={setCreateCustomerOpen}
+            title="Provision Customer Portal User"
+            description="Create external credentials for a customer client to log in, review quotations, and negotiate orders."
           >
-        <form onSubmit={handleCreateUser} className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <label htmlFor="create-user-name" className="text-xs font-semibold text-text-secondary">
-              Full Name
-            </label>
-            <Input
-              id="create-user-name"
-              required
-              value={newUserName}
-              onChange={(e) => setNewUserName(e.target.value)}
-              placeholder="e.g. Vikram Mehta"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="create-user-email" className="text-xs font-semibold text-text-secondary">
-              Email / Login Username
-            </label>
-            <Input
-              id="create-user-email"
-              type="email"
-              required
-              value={newUserEmail}
-              onChange={(e) => setNewUserEmail(e.target.value)}
-              placeholder="vikram@dealflow.test"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="create-user-role" className="text-xs font-semibold text-text-secondary">
-              Assigned Role
-            </label>
-            <Select
-              id="create-user-role"
-              value={newUserRole}
-              onChange={(e) => setNewUserRole(e.target.value as any)}
-            >
-              <option value="SALES_REP">Sales Representative (Rep)</option>
-              <option value="SALES_MANAGER">Sales Manager (L1 Approver)</option>
-              <option value="FINANCE">Finance Director (L2 Approver)</option>
-              <option value="ADMIN">System Administrator</option>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="create-user-password" className="text-xs font-semibold text-text-secondary">
-              Initial Password
-            </label>
-            <Input
-              id="create-user-password"
-              type="text"
-              required
-              value={newUserPassword}
-              onChange={(e) => setNewUserPassword(e.target.value)}
-              placeholder="Password123!"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-3 border-t border-border">
-            <Button type="button" variant="outline" size="sm" onClick={() => setCreateUserOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="default" size="sm" className="font-bold">
-              Create User
-            </Button>
-          </div>
-        </form>
-      </Dialog>
+            <form onSubmit={handleCreateCustomer} className="space-y-4 pt-2">
+              <div className="rounded-lg bg-emerald-50/90 border border-emerald-200 p-3 text-xs text-emerald-950 flex items-start gap-2.5">
+                <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-emerald-900">B2B Customer Portal Account</p>
+                  <p className="text-emerald-800 text-[11px] mt-0.5 leading-relaxed">
+                    This account is provisioned exclusively for the external customer portal. Cost margins, approval thresholds, and internal notes are strictly stripped from their session.
+                  </p>
+                </div>
+              </div>
 
-      {/* Dialog: Edit User */}
-      <Dialog
-        open={!!editingUser}
-        onOpenChange={(open) => !open && setEditingUser(null)}
-        title="Edit User &amp; Credentials"
-        description="Update full name, login username, assigned role, or password."
-      >
-        <form onSubmit={handleSaveEdit} className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <label htmlFor="edit-user-name" className="text-xs font-semibold text-text-secondary">
-              Full Name
-            </label>
-            <Input
-              id="edit-user-name"
-              required
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="edit-user-email" className="text-xs font-semibold text-text-secondary">
-              Email / Login Username
-            </label>
-            <Input
-              id="edit-user-email"
-              type="email"
-              required
-              value={editEmail}
-              onChange={(e) => setEditEmail(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="edit-user-role" className="text-xs font-semibold text-text-secondary">
-              Assigned Role
-            </label>
-            <Select
-              id="edit-user-role"
-              value={editRole}
-              onChange={(e) => setEditRole(e.target.value as any)}
-            >
-              <option value="SALES_REP">Sales Representative (Rep)</option>
-              <option value="SALES_MANAGER">Sales Manager (L1 Approver)</option>
-              <option value="FINANCE">Finance Director (L2 Approver)</option>
-              <option value="ADMIN">System Administrator</option>
-              <option value="CUSTOMER">Customer Portal</option>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="edit-user-password" className="text-xs font-semibold text-text-secondary">
-              Password
-            </label>
-            <Input
-              id="edit-user-password"
-              type="text"
-              required
-              value={editPassword}
-              onChange={(e) => setEditPassword(e.target.value)}
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-3 border-t border-border">
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditingUser(null)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="default" size="sm" className="font-bold">
-              Save Changes
-            </Button>
-          </div>
-        </form>
-      </Dialog>
+              <div className="space-y-1.5">
+                <label htmlFor="create-cust-name" className="text-xs font-semibold text-text-secondary">
+                  Customer Contact / Buyer Name
+                </label>
+                <Input
+                  id="create-cust-name"
+                  required
+                  value={custName}
+                  onChange={(e) => setCustName(e.target.value)}
+                  placeholder="e.g. Alice Johnson"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="create-cust-company" className="text-xs font-semibold text-text-secondary flex items-center justify-between">
+                  <span>Customer Company / Organization</span>
+                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100/70 px-1.5 py-0.5 rounded">Partner Entity</span>
+                </label>
+                <Input
+                  id="create-cust-company"
+                  required
+                  value={custCompany}
+                  onChange={(e) => setCustCompany(e.target.value)}
+                  placeholder="e.g. Acme Corp, Globex Industries"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="create-cust-email" className="text-xs font-semibold text-text-secondary">
+                  Email / Login Username
+                </label>
+                <Input
+                  id="create-cust-email"
+                  type="email"
+                  required
+                  value={custEmail}
+                  onChange={(e) => setCustEmail(e.target.value)}
+                  placeholder="buyer@acme.test"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="create-cust-password" className="text-xs font-semibold text-text-secondary">
+                  Initial Password
+                </label>
+                <Input
+                  id="create-cust-password"
+                  type="text"
+                  required
+                  value={custPassword}
+                  onChange={(e) => setCustPassword(e.target.value)}
+                  placeholder="Password123!"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                <Button type="button" variant="outline" size="sm" onClick={() => setCreateCustomerOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="default"
+                  size="sm"
+                  className="font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  Create Customer User
+                </Button>
+              </div>
+            </form>
+          </Dialog>
+
+          {/* 2. Dialog: Create Internal User (STRICTLY INTERNAL WORKSPACE - NO CUSTOMER OPTION) */}
+          <Dialog
+            open={createInternalOpen}
+            onOpenChange={setCreateInternalOpen}
+            title="Provision Internal Team User"
+            description="Create credentials and assign an internal governance role to a team member."
+          >
+            <form onSubmit={handleCreateInternal} className="space-y-4 pt-2">
+              <div className="space-y-1.5">
+                <label htmlFor="create-int-name" className="text-xs font-semibold text-text-secondary">
+                  Full Name
+                </label>
+                <Input
+                  id="create-int-name"
+                  required
+                  value={intName}
+                  onChange={(e) => setIntName(e.target.value)}
+                  placeholder="e.g. Rahul Verma"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="create-int-role" className="text-xs font-semibold text-text-secondary">
+                  Assigned Internal Role
+                </label>
+                <Select
+                  id="create-int-role"
+                  value={intRole}
+                  onChange={(e) => setIntRole(e.target.value as any)}
+                >
+                  <option value="SALES_REP">Sales Representative (Rep)</option>
+                  <option value="SALES_MANAGER">Sales Manager (L1 Approver)</option>
+                  <option value="FINANCE">Finance Director (L2 Approver)</option>
+                  <option value="ADMIN">System Administrator</option>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="create-int-email" className="text-xs font-semibold text-text-secondary">
+                  Email / Login Username
+                </label>
+                <Input
+                  id="create-int-email"
+                  type="email"
+                  required
+                  value={intEmail}
+                  onChange={(e) => setIntEmail(e.target.value)}
+                  placeholder="rahul@dealflow.test"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="create-int-password" className="text-xs font-semibold text-text-secondary">
+                  Initial Password
+                </label>
+                <Input
+                  id="create-int-password"
+                  type="text"
+                  required
+                  value={intPassword}
+                  onChange={(e) => setIntPassword(e.target.value)}
+                  placeholder="Password123!"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                <Button type="button" variant="outline" size="sm" onClick={() => setCreateInternalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="default" size="sm" className="font-bold">
+                  Create Internal User
+                </Button>
+              </div>
+            </form>
+          </Dialog>
+
+          {/* 3. Dialog: Edit User (Bifurcated: Customer vs Internal) */}
+          <Dialog
+            open={!!editingUser}
+            onOpenChange={(open) => !open && setEditingUser(null)}
+            title={editingUser?.role === 'CUSTOMER' ? "Edit Customer Portal Account" : "Edit Internal User & Credentials"}
+            description={
+              editingUser?.role === 'CUSTOMER'
+                ? "Update customer buyer contact name, organization, login email, or password."
+                : "Update team member full name, assigned internal role, login email, or password."
+            }
+          >
+            <form onSubmit={handleSaveEdit} className="space-y-4 pt-2">
+              {editingUser?.role === 'CUSTOMER' ? (
+                <>
+                  <div className="space-y-1.5">
+                    <label htmlFor="edit-cust-name" className="text-xs font-semibold text-text-secondary">
+                      Customer Contact / Buyer Name
+                    </label>
+                    <Input
+                      id="edit-cust-name"
+                      required
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="edit-cust-company" className="text-xs font-semibold text-text-secondary flex items-center justify-between">
+                      <span>Customer Company / Organization</span>
+                      <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100/70 px-1.5 py-0.5 rounded">Partner Entity</span>
+                    </label>
+                    <Input
+                      id="edit-cust-company"
+                      required
+                      value={editCompany}
+                      onChange={(e) => setEditCompany(e.target.value)}
+                      placeholder="e.g. Acme Corp"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <label htmlFor="edit-int-name" className="text-xs font-semibold text-text-secondary">
+                      Full Name
+                    </label>
+                    <Input
+                      id="edit-int-name"
+                      required
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="edit-int-role" className="text-xs font-semibold text-text-secondary">
+                      Assigned Internal Role
+                    </label>
+                    <Select
+                      id="edit-int-role"
+                      value={editRole}
+                      onChange={(e) => setEditRole(e.target.value as any)}
+                    >
+                      <option value="SALES_REP">Sales Representative (Rep)</option>
+                      <option value="SALES_MANAGER">Sales Manager (L1 Approver)</option>
+                      <option value="FINANCE">Finance Director (L2 Approver)</option>
+                      <option value="ADMIN">System Administrator</option>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-1.5">
+                <label htmlFor="edit-user-email" className="text-xs font-semibold text-text-secondary">
+                  Email / Login Username
+                </label>
+                <Input
+                  id="edit-user-email"
+                  type="email"
+                  required
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="edit-user-password" className="text-xs font-semibold text-text-secondary">
+                  Password
+                </label>
+                <Input
+                  id="edit-user-password"
+                  type="text"
+                  required
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                <Button type="button" variant="outline" size="sm" onClick={() => setEditingUser(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="default"
+                  size="sm"
+                  className={`font-bold ${editingUser?.role === 'CUSTOMER' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}`}
+                >
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </Dialog>
         </>
       )}
     </div>

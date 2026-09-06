@@ -1,82 +1,197 @@
 import { INITIAL_GOLDEN_DEAL } from './fixtures/goldenDeal';
 import { MOCK_PRODUCTS, MOCK_PARTNERS, MOCK_WAREHOUSES } from './fixtures/products';
 import { INITIAL_MOCK_USERS, getStoredUsers, saveStoredUsers, type UserAccountData } from './fixtures/users';
+import { REALISTIC_DEALS_160, REALISTIC_APPROVALS_160, REALISTIC_ALERTS_160 } from './fixtures/realisticDeals160';
 import type { DealWorkspace, ControlTowerData, DealAlertItem, NotificationItem } from '@/api/types';
 
+import { createRealisticWorkspace, recomputeWorkspace } from './dealWorkspaceFactory';
+
+
+export const SYNC_CHANNEL_NAME = 'dealflow360_cross_tab_sync';
+
+export function broadcastStateChange(entity: 'deals' | 'approvals' | 'workspaces' | 'users' | 'invoices') {
+  if (typeof window === 'undefined') return;
+  try {
+    if ('BroadcastChannel' in window) {
+      const bc = new BroadcastChannel(SYNC_CHANNEL_NAME);
+      bc.postMessage({ type: 'SYNC_STATE', entity, timestamp: Date.now() });
+      bc.close();
+    }
+    window.dispatchEvent(new CustomEvent('dealflow_sync', { detail: { entity } }));
+  } catch {}
+}
+
+const STORAGE_WORKSPACES_KEY = 'dealflow_mock_workspaces_v4';
+const STORAGE_DEALS_KEY = 'dealflow_mock_deals_v4';
+const STORAGE_APPROVALS_KEY = 'dealflow_mock_approvals_v4';
+
+function getStoredWorkspaces(): Record<string, DealWorkspace> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(STORAGE_WORKSPACES_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+function saveStoredWorkspaces(workspaces: Record<string, DealWorkspace>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_WORKSPACES_KEY, JSON.stringify(workspaces));
+    broadcastStateChange('workspaces');
+  } catch {}
+}
+
+function getStoredDeals(fallback: any[]): any[] {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(STORAGE_DEALS_KEY);
+    let deals = raw ? JSON.parse(raw) : [...fallback];
+    // Cross-heal: if any workspace in storage was marked CONFIRMED, synchronize deals list
+    const rawWs = localStorage.getItem(STORAGE_WORKSPACES_KEY);
+    if (rawWs) {
+      try {
+        const workspaces = JSON.parse(rawWs);
+        Object.values(workspaces).forEach((ws: any) => {
+          if (ws?.deal?.id && ws?.deal?.status === 'CONFIRMED') {
+            const match = deals.find((d: any) => d.id === ws.deal.id);
+            if (match && match.status !== 'CONFIRMED') {
+              match.status = 'CONFIRMED';
+              match.approval_state = 'APPROVED';
+            }
+          }
+        });
+      } catch {}
+    }
+    return deals;
+  } catch {}
+  return fallback;
+}
+
+function saveStoredDeals(deals: any[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_DEALS_KEY, JSON.stringify(deals));
+    broadcastStateChange('deals');
+  } catch {}
+}
+
+function getStoredApprovals(fallback: any[]): any[] {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(STORAGE_APPROVALS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return fallback;
+}
+
+function saveStoredApprovals(approvals: any[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_APPROVALS_KEY, JSON.stringify(approvals));
+    broadcastStateChange('approvals');
+  } catch {}
+}
+
+const STORAGE_INVOICES_KEY = 'dealflow_mock_invoices_v4';
+
+function getStoredInvoices(fallback: any[]): any[] {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(STORAGE_INVOICES_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return fallback;
+}
+
+function saveStoredInvoices(invoices: any[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(invoices));
+    broadcastStateChange('invoices' as any);
+  } catch {}
+}
+
 class MockStateManager {
+  public invalidateMemoryCache(entity?: string) {
+    if (!entity || entity === 'deals') {
+      this._deals = null;
+    }
+    if (!entity || entity === 'approvals') {
+      this._approvals = null;
+    }
+    if (!entity || entity === 'workspaces') {
+      this._workspaces = null;
+    }
+    if (!entity || entity === 'invoices') {
+      this._invoices = null;
+    }
+  }
+
   public goldenDeal: DealWorkspace = JSON.parse(JSON.stringify(INITIAL_GOLDEN_DEAL));
-  public workspaces: Record<string, DealWorkspace> = {};
+  private _workspaces: Record<string, DealWorkspace> | null = null;
+  public get workspaces(): Record<string, DealWorkspace> {
+    if (!this._workspaces) {
+      this._workspaces = getStoredWorkspaces();
+    }
+    return this._workspaces;
+  }
+  public set workspaces(val: Record<string, DealWorkspace>) {
+    this._workspaces = val;
+    saveStoredWorkspaces(val);
+  }
+
+  public saveWorkspace(id: string, ws: DealWorkspace) {
+    const current = this.workspaces;
+    current[id] = ws;
+    this.workspaces = current;
+    saveStoredWorkspaces(current);
+  }
+
   public products = [...MOCK_PRODUCTS];
   public partners = [...MOCK_PARTNERS];
   public warehouses = [...MOCK_WAREHOUSES];
-  public users: Record<string, UserAccountData> = getStoredUsers();
+  public get users(): Record<string, UserAccountData> {
+    return getStoredUsers();
+  }
+  public set users(val: Record<string, UserAccountData>) {
+    saveStoredUsers(val);
+  }
+
+  public saveUser(key: string, user: UserAccountData) {
+    const current = getStoredUsers();
+    current[key] = user;
+    saveStoredUsers(current);
+  }
+
+  public removeUser(key: string) {
+    const current = getStoredUsers();
+    delete current[key];
+    saveStoredUsers(current);
+  }
+
+  public recomputeWorkspace(ws: DealWorkspace): DealWorkspace {
+    return recomputeWorkspace(ws);
+  }
 
   public getOrCreateWorkspace(id: string): DealWorkspace {
-    if (this.workspaces[id]) {
-      return this.workspaces[id];
+    const stored = this.workspaces;
+    if (stored[id]) {
+      return stored[id];
     }
     if (id === 'deal_d1024_acme') {
-      this.workspaces[id] = this.goldenDeal;
+      this.saveWorkspace(id, this.goldenDeal);
       return this.goldenDeal;
     }
 
-    const foundDeal = this.deals.find((d) => d.id === id);
-    const foundApproval = this.approvals.find((a) => a.id === id);
-
-    const ws: DealWorkspace = JSON.parse(JSON.stringify(this.goldenDeal));
-    ws.deal.id = id;
-
-    if (foundDeal) {
-      ws.deal.reference = foundDeal.reference;
-      ws.deal.odoo_order_name = foundDeal.odoo_order_name;
-      ws.deal.status = (foundDeal.status === 'PENDING_APPROVAL' ? 'DRAFT' : foundDeal.status) as any;
-      ws.deal.approval_state = foundDeal.approval_state as any;
-      ws.deal.required_level = (foundDeal.required_level === 'MANAGER_ONLY' ? 'MANAGER' : foundDeal.required_level) as any;
-      ws.deal.health_status = foundDeal.health_status;
-      ws.deal.current_risk_score = foundDeal.current_risk_score;
-      ws.deal.current_severity = foundDeal.current_severity;
-      ws.deal.amount_total_cache = foundDeal.amount_total_cache;
-      ws.customer.name = foundDeal.partner_name_cache;
-      ws.customer.partner_id = foundDeal.partner_id;
-      ws.risk.score = foundDeal.current_risk_score;
-      ws.risk.severity = foundDeal.current_severity;
-      ws.approval.state = foundDeal.approval_state as any;
-      ws.approval.can_decide =
-        foundDeal.approval_state === 'PENDING_MANAGER' ||
-        foundDeal.approval_state === 'PENDING_FINANCE';
-    } else if (foundApproval) {
-      ws.deal.reference = foundApproval.reference;
-      ws.customer.name = foundApproval.customer;
-      ws.risk.score = foundApproval.risk_score;
-      ws.risk.severity = foundApproval.severity;
-      ws.approval.state =
-        foundApproval.status === 'PENDING'
-          ? foundApproval.stage === 'Finance'
-            ? 'PENDING_FINANCE'
-            : 'PENDING_MANAGER'
-          : (foundApproval.status as any);
-      ws.deal.approval_state = ws.approval.state;
-      ws.deal.status = 'DRAFT';
-      ws.approval.can_decide = foundApproval.status === 'PENDING';
-    }
-
-    this.workspaces[id] = ws;
+    const ws = createRealisticWorkspace(id, this.deals, this.approvals, this.goldenDeal);
+    this.saveWorkspace(id, ws);
     return ws;
   }
 
   public reloadUsers() {
     this.users = getStoredUsers();
     return this.users;
-  }
-
-  public saveUser(key: string, user: UserAccountData) {
-    this.users[key] = user;
-    saveStoredUsers(this.users);
-  }
-
-  public removeUser(key: string) {
-    delete this.users[key];
-    saveStoredUsers(this.users);
   }
 
   public controlTower: ControlTowerData = {
@@ -141,7 +256,33 @@ class MockStateManager {
     ],
   };
 
-  public approvals = [
+  private _approvals: any[] | null = null;
+  public saveApprovals() {
+    saveStoredApprovals(this.approvals);
+  }
+  public get approvals(): any[] {
+    if (!this._approvals) {
+      this._approvals = getStoredApprovals(MockStateManager.rawApprovals);
+    }
+    return this._approvals;
+  }
+  public set approvals(val: any[]) {
+    this._approvals = val;
+    saveStoredApprovals(val);
+  }
+  public static rawApprovals = [
+    {
+      id: 'deal_d1022_gamma',
+      reference: 'D-1022',
+      customer: 'Gamma LLC',
+      risk_score: 7.0,
+      severity: 'LOW' as const,
+      stage: 'Finance',
+      assigned_to: 'Vikram Finance Officer',
+      status: 'APPROVED' as const,
+      amount: 1968948,
+      created_at: new Date(Date.now() - 86400000).toISOString(),
+    },
     {
       id: 'deal_d1024_acme',
       reference: 'D-1024',
@@ -250,9 +391,60 @@ class MockStateManager {
       amount: 520000,
       created_at: new Date(Date.now() - 6 * 86400000).toISOString(),
     },
+    {
+      id: 'deal_d1031_nexus',
+      reference: 'D-1031',
+      customer: 'Nexus Pharma Ltd',
+      risk_score: 52.0,
+      severity: 'HIGH' as const,
+      stage: 'Finance',
+      assigned_to: 'Vikram Finance Officer',
+      status: 'PENDING' as const,
+      amount: 1250000,
+      created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+    },
+    {
+      id: 'deal_d1028_vertex',
+      reference: 'D-1028',
+      customer: 'Vertex Technologies',
+      risk_score: 34.5,
+      severity: 'MEDIUM' as const,
+      stage: 'Finance',
+      assigned_to: 'Vikram Finance Officer',
+      status: 'PENDING' as const,
+      amount: 870000,
+      created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
+    },
+    {
+      id: 'deal_d1026_prism',
+      reference: 'D-1026',
+      customer: 'Prism Analytics',
+      risk_score: 19.0,
+      severity: 'LOW' as const,
+      stage: 'Finance',
+      assigned_to: 'Vikram Finance Officer',
+      status: 'APPROVED' as const,
+      amount: 480000,
+      created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    },
+    ...REALISTIC_APPROVALS_160,
   ];
 
-  public deals = [
+  private _deals: any[] | null = null;
+  public saveDeals() {
+    saveStoredDeals(this.deals);
+  }
+  public get deals(): any[] {
+    if (!this._deals) {
+      this._deals = getStoredDeals(MockStateManager.rawDeals);
+    }
+    return this._deals;
+  }
+  public set deals(val: any[]) {
+    this._deals = val;
+    saveStoredDeals(val);
+  }
+  public static rawDeals = [
     {
       id: 'deal_d1024_acme',
       reference: 'D-1024',
@@ -314,7 +506,7 @@ class MockStateManager {
       partner_name_cache: 'Gamma LLC',
       partner_id: 4,
       status: 'DRAFT',
-      approval_state: 'DRAFT',
+      approval_state: 'APPROVED',
       required_level: 'REP_ONLY',
       health_status: 'WATCH' as const,
       current_risk_score: 24.0,
@@ -325,9 +517,24 @@ class MockStateManager {
       owner: { id: 4, name: 'Sales Rep One' },
       version: 1,
     },
+    ...REALISTIC_DEALS_160,
   ];
 
-  public invoices = [
+  private _invoices: any[] | null = null;
+  public saveInvoices() {
+    saveStoredInvoices(this.invoices);
+  }
+  public get invoices(): any[] {
+    if (!this._invoices) {
+      this._invoices = getStoredInvoices(MockStateManager.rawInvoices);
+    }
+    return this._invoices;
+  }
+  public set invoices(val: any[]) {
+    this._invoices = val;
+    saveStoredInvoices(val);
+  }
+  public static rawInvoices = [
     {
       id: 1042,
       number: 'INV-1042',
@@ -407,6 +614,7 @@ class MockStateManager {
       health_status: 'AT_RISK',
       created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
     },
+    ...REALISTIC_ALERTS_160,
   ];
 
   public notifications: NotificationItem[] = [
@@ -442,3 +650,23 @@ class MockStateManager {
 }
 
 export const mockState = new MockStateManager();
+
+if (typeof window !== 'undefined') {
+  try {
+    if ('BroadcastChannel' in window) {
+      const listenBc = new BroadcastChannel(SYNC_CHANNEL_NAME);
+      listenBc.onmessage = (event) => {
+        const entity = event.data?.entity;
+        mockState.invalidateMemoryCache(entity);
+        window.dispatchEvent(new CustomEvent('dealflow_sync', { detail: event.data }));
+      };
+    }
+    window.addEventListener('storage', (e) => {
+      if (e.key === STORAGE_DEALS_KEY) mockState.invalidateMemoryCache('deals');
+      if (e.key === STORAGE_APPROVALS_KEY) mockState.invalidateMemoryCache('approvals');
+      if (e.key === STORAGE_WORKSPACES_KEY) mockState.invalidateMemoryCache('workspaces');
+      if (e.key === STORAGE_INVOICES_KEY) mockState.invalidateMemoryCache('invoices');
+      window.dispatchEvent(new CustomEvent('dealflow_sync', { detail: { entity: 'storage' } }));
+    });
+  } catch {}
+}

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 import { Stepper } from '@/components/data/Stepper';

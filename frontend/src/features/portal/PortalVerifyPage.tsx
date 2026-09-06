@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { authApi } from '@/api/endpoints/auth';
 import { usePortalAuthStore } from './portalAuthStore';
@@ -45,9 +45,9 @@ export const PortalVerifyPage: React.FC = () => {
                 size="sm"
                 variant="outline"
                 className="mt-2"
-                onClick={() => navigate('/portal/login')}
+                onClick={() => navigate('/login')}
               >
-                Back to Portal Login
+                Back to Sign In
               </Button>
             </>
           ) : (

@@ -15,8 +15,8 @@ export const SalesDashboardPage: React.FC = () => {
   const navigate = useNavigate();
 
   const { data: dealsData } = useQuery({
-    queryKey: queryKeys.deals.list({ status: 'DRAFT,SENT,UNDER_NEGOTIATION' }),
-    queryFn: () => dealsApi.list({ status: 'DRAFT,SENT,UNDER_NEGOTIATION' }),
+    queryKey: queryKeys.deals.list({}),
+    queryFn: () => dealsApi.list({}),
   });
 
   const { data: ctData } = useQuery({
@@ -29,9 +29,14 @@ export const SalesDashboardPage: React.FC = () => {
     queryFn: () => notificationsApi.list(false),
   });
 
-  const openDealsCount = dealsData?.total ?? 4;
-  const pendingApprovals = ctData?.kpis.pending_approvals ?? 3;
-  const atRiskCount = ctData?.kpis.at_risk_count ?? 2;
+  const allDeals = dealsData?.items || [];
+  const openDealsCount = allDeals.length > 0
+    ? allDeals.filter((d: any) => d.status !== 'CANCELLED' && d.status !== 'REJECTED').length
+    : (dealsData?.total ?? 0);
+
+  const pendingApprovals = ctData?.kpis?.pending_approvals ?? 0;
+  const atRiskCount = ctData?.kpis?.at_risk_count ?? allDeals.filter((d: any) => (d.current_risk_score && d.current_risk_score >= 40) || d.health_status === 'AT_RISK').length;
+
 
   return (
     <div className="space-y-6">

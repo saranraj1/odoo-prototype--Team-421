@@ -159,22 +159,22 @@ export const ApprovalDetailPage: React.FC = () => {
   const managerStepStatus = isApproved || isPendingFinance || isRejectedByFinance || isReturnedByFinance
     ? ('done' as const)
     : isRejected
-    ? ('rejected' as const)
-    : isReturned
-    ? ('returned' as const)
-    : isPendingManager
-    ? ('current' as const)
-    : ('pending' as const);
+      ? ('rejected' as const)
+      : isReturned
+        ? ('returned' as const)
+        : isPendingManager
+          ? ('current' as const)
+          : ('pending' as const);
 
   const financeStepStatus = isApproved
     ? ('done' as const)
     : isRejected && isRejectedByFinance
-    ? ('rejected' as const)
-    : isReturned && isReturnedByFinance
-    ? ('returned' as const)
-    : isPendingFinance
-    ? ('current' as const)
-    : ('pending' as const);
+      ? ('rejected' as const)
+      : isReturned && isReturnedByFinance
+        ? ('returned' as const)
+        : isPendingFinance
+          ? ('current' as const)
+          : ('pending' as const);
 
   const stepperSteps = [
     { label: 'Submitted', status: 'done' as const },
@@ -251,11 +251,11 @@ export const ApprovalDetailPage: React.FC = () => {
 
         {/* Action Buttons - Rendered strictly when active user is authorized for current approval stage */}
         {canUserActOnCurrentStage() && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               size="sm"
               onClick={() => handleOpenDecision('APPROVE')}
-              className="gap-1.5 font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+              className="gap-1.5 font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs h-8 px-3 whitespace-nowrap"
             >
               <CheckCircle className="h-3.5 w-3.5" />
               Approve
@@ -264,7 +264,7 @@ export const ApprovalDetailPage: React.FC = () => {
               size="sm"
               variant="outline"
               onClick={() => handleOpenDecision('RETURN')}
-              className="gap-1.5 font-medium text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
+              className="gap-1.5 font-medium text-xs border-amber-300 bg-amber-50/40 text-amber-800 hover:bg-amber-100/70 hover:border-amber-400 h-8 px-3 whitespace-nowrap"
             >
               <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
               Return for Revision
@@ -273,16 +273,16 @@ export const ApprovalDetailPage: React.FC = () => {
               size="sm"
               variant="outline"
               onClick={() => handleOpenDecision('REJECT')}
-              className="gap-1.5 font-medium text-xs border-red-200 text-red-700 hover:bg-red-50"
+              className="gap-1.5 font-medium text-xs border-red-200 bg-red-50/30 text-red-700 hover:bg-red-100/60 hover:border-red-300 h-8 px-3 whitespace-nowrap"
             >
-              <XCircle className="h-3.5 w-3.5" />
+              <XCircle className="h-3.5 w-3.5 text-red-600" />
               Reject
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => handleOpenDecision('ESCALATE')}
-              className="gap-1.5 text-xs text-slate-600 hover:text-slate-900 border-slate-200"
+              className="gap-1.5 text-xs text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50 h-8 px-3 whitespace-nowrap"
             >
               <ArrowUpRight className="h-3.5 w-3.5" />
               Escalate

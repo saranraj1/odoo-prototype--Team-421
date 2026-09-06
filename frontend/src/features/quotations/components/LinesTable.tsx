@@ -26,6 +26,7 @@ export const LinesTable: React.FC<LinesTableProps> = ({
   readOnly = false,
 }) => {
   const [localDiscounts, setLocalDiscounts] = useState<Record<number, number>>({});
+  const timeoutRefs = React.useRef<Record<number, any>>({});
 
   useEffect(() => {
     const init: Record<number, number> = {};
@@ -36,12 +37,14 @@ export const LinesTable: React.FC<LinesTableProps> = ({
   }, [lines]);
 
   const handleDiscountChange = (lineId: number, val: number) => {
-    setLocalDiscounts((prev) => ({ ...prev, [lineId]: val }));
-    // Debounce callback
-    const timer = setTimeout(() => {
-      onUpdateLine(lineId, { discount_pct: val });
-    }, 400);
-    return () => clearTimeout(timer);
+    const clamped = Math.min(100, Math.max(0, isNaN(val) ? 0 : val));
+    setLocalDiscounts((prev) => ({ ...prev, [lineId]: clamped }));
+    if (timeoutRefs.current[lineId]) {
+      clearTimeout(timeoutRefs.current[lineId]);
+    }
+    timeoutRefs.current[lineId] = setTimeout(() => {
+      onUpdateLine(lineId, { discount_pct: clamped });
+    }, 300);
   };
 
   return (
@@ -64,7 +67,12 @@ export const LinesTable: React.FC<LinesTableProps> = ({
             </thead>
             <tbody className="divide-y divide-border/60">
               {lines.map((l) => {
-                const isOver = l.overage_pts > 0;
+                const effectiveDiscount = localDiscounts[l.odoo_line_id] !== undefined ? localDiscounts[l.odoo_line_id] : l.discount_pct;
+                const effectiveQty = l.qty;
+                const effectiveNet = Math.round(effectiveQty * l.price_unit * (1 - effectiveDiscount / 100));
+                const effectiveMargin = Math.round(effectiveNet - (effectiveQty * l.unit_cost));
+                const overagePts = Math.max(0, Math.round((effectiveDiscount - l.ceiling_pct) * 10) / 10);
+                const isOver = overagePts > 0;
                 const isHighlighted = highlightedLineId === l.odoo_line_id;
 
                 return (
@@ -128,7 +136,7 @@ export const LinesTable: React.FC<LinesTableProps> = ({
                           <span className="absolute right-1.5 text-[11px] font-medium text-slate-400 pointer-events-none">%</span>
                         </div>
                       ) : (
-                        <span className="tabular-nums font-semibold">{formatPct(l.discount_pct)}</span>
+                        <span className="tabular-nums font-semibold">{formatPct(effectiveDiscount)}</span>
                       )}
                     </td>
 
@@ -139,7 +147,7 @@ export const LinesTable: React.FC<LinesTableProps> = ({
                     <td className="py-3 px-4 text-center">
                       {isOver ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-chip text-[10px] font-bold bg-red-50 text-red-800 border border-red-200">
-                          OVER (+{l.overage_pts.toFixed(0)}pt)
+                          OVER (+{overagePts.toFixed(1)}pt)
                         </span>
                       ) : (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-chip text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
@@ -149,13 +157,13 @@ export const LinesTable: React.FC<LinesTableProps> = ({
                     </td>
 
                     <td className="py-3 px-4 text-right tabular-nums">
-                      <span className={l.margin < 0 ? 'text-red-600 font-semibold' : 'text-slate-700 font-medium'}>
-                        {formatMoney(l.margin, currency)}
+                      <span className={effectiveMargin < 0 ? 'text-red-600 font-semibold' : 'text-slate-700 font-medium'}>
+                        {formatMoney(effectiveMargin, currency)}
                       </span>
                     </td>
 
                     <td className="py-3 px-4 text-right font-semibold tabular-nums text-text-primary">
-                      {formatMoney(l.net_value, currency)}
+                      {formatMoney(effectiveNet, currency)}
                     </td>
 
                     {!readOnly && (

@@ -15,7 +15,7 @@ export const PortalLayout: React.FC = () => {
 
   const handleLogout = () => {
     clearAuth();
-    navigate('/portal/login');
+    navigate('/login');
   };
 
   return (

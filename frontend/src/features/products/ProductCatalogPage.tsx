@@ -8,20 +8,38 @@ import { HintStrip } from '@/components/data/HintStrip';
 import { productsApi } from '@/api/endpoints/products';
 import { queryKeys } from '@/api/queryKeys';
 import { formatMoney } from '@/lib/format';
+import { MOCK_PRODUCTS } from '@/mocks/fixtures/products';
 
 export const ProductCatalogPage: React.FC = () => {
   const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  const { data: products = [], isLoading } = useQuery({
+  const { data: productsData = [], isLoading } = useQuery({
     queryKey: queryKeys.products.list({ category: selectedCategory }),
-    queryFn: () => productsApi.list(),
+    queryFn: () => productsApi.list({ category: selectedCategory === 'all' ? undefined : selectedCategory }),
   });
 
-  const { data: categories = [] } = useQuery({
+  const { data: categoriesData = [] } = useQuery({
     queryKey: queryKeys.products.categories,
     queryFn: () => productsApi.getCategories(),
   });
+
+  const productList: any[] = Array.isArray(productsData) && productsData.length > 0
+    ? productsData
+    : (productsData as any)?.data || MOCK_PRODUCTS;
+
+  const categories: any[] = Array.isArray(categoriesData) && categoriesData.length > 0
+    ? categoriesData
+    : (categoriesData as any)?.data || [
+        { id: 1, name: 'Hardware' },
+        { id: 2, name: 'Services' },
+        { id: 3, name: 'Subscriptions' },
+        { id: 4, name: 'Accessories' },
+      ];
+
+  const filteredProducts = selectedCategory === 'all'
+    ? productList
+    : productList.filter((p) => String(p.category_id) === selectedCategory || p.category_name?.toLowerCase() === selectedCategory.toLowerCase());
 
   const columns: ColumnDef<any>[] = [
     {
@@ -67,9 +85,9 @@ export const ProductCatalogPage: React.FC = () => {
 
       {/* 3 KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <KpiCard title="Total Products" value="5" caption="Active in Odoo catalog" />
+        <KpiCard title="Total Products" value={String(productList.length)} caption="Active in Odoo catalog" />
         <KpiCard title="Pricelists" value="3 Tiers" caption="GOLD, SILVER, BRONZE policies" />
-        <KpiCard title="Catalog SKUs" value="8 Variants" caption="Multi-warehouse enabled" />
+        <KpiCard title="Catalog SKUs" value={`${productList.filter((p) => p.type === 'STOCKABLE').length} Physical`} caption="Multi-warehouse enabled" />
       </div>
 
       {/* Category Pills Filter */}
@@ -102,7 +120,7 @@ export const ProductCatalogPage: React.FC = () => {
       </div>
 
       <DataTable
-        data={products}
+        data={filteredProducts}
         columns={columns}
         isLoading={isLoading}
         onRowClick={(p) => navigate(`/products/${p.id}`)}

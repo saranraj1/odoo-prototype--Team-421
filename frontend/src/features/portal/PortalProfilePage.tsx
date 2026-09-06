@@ -54,7 +54,7 @@ export const PortalProfilePage: React.FC = () => {
 
   const handleLogout = () => {
     clearAuth();
-    navigate('/portal/login');
+    navigate('/login');
   };
 
   // Filter orders based on period, status, and query

@@ -1,4 +1,4 @@
-﻿import { apiClient } from '../client';
+import { apiClient } from '../client';
 import type { DealWorkspace } from '../types';
 
 export const dealsApi = {
@@ -57,6 +57,12 @@ export const dealsApi = {
 
   send: (id: string): Promise<DealWorkspace> =>
     apiClient(`/deals/${id}/send`, { method: 'POST' }),
+
+  acceptProposalAndAddItem: (dealId: string, payload: { request_id: string; product_id?: number; qty?: number; discount_pct?: number }): Promise<DealWorkspace> =>
+    apiClient(`/deals/${dealId}/accept-proposal-and-add-item`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   confirm: (id: string): Promise<DealWorkspace> =>
     apiClient(`/deals/${id}/confirm`, { method: 'POST' }),
