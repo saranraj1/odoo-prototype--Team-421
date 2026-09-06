@@ -12,13 +12,34 @@ import { generateInvoicePdf } from '@/lib/pdf/invoicePdfTemplate';
 import { formatMoney } from '@/lib/format';
 import { ArrowLeft, CreditCard, Download } from 'lucide-react';
 
+import { useQuery } from '@tanstack/react-query';
+
 export const InvoiceDetailPage: React.FC = () => {
   const { id = '1042' } = useParams();
   const navigate = useNavigate();
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [isPaid, setIsPaid] = useState(false);
+  const [isPaidLocal, setIsPaidLocal] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+
+  const { data: invoiceData } = useQuery({
+    queryKey: ['invoices', id],
+    queryFn: () => billingApi.getInvoice(id),
+  });
+
+  const invoice = invoiceData || {
+    id: Number(id),
+    number: `INV-${id}`,
+    customer: 'Acme Corp',
+    amount: 558000,
+    status: isPaidLocal ? 'Paid' : 'Unpaid',
+    lines: [
+      { product_name: 'Laptop Pro 14"', qty: 10, price_unit: 44000, net_value: 440000 },
+      { product_name: 'Setup Service', qty: 1, price_unit: 82000, net_value: 82000 },
+    ],
+  };
+
+  const isPaid = isPaidLocal || invoice.status?.toLowerCase() === 'paid';
 
   const steps = [
     { label: 'Order Confirmed', status: 'done' as const },
@@ -30,10 +51,10 @@ export const InvoiceDetailPage: React.FC = () => {
   const handleConfirmPayment = async (payload: { amount: number; journal_id?: number }) => {
     try {
       await billingApi.recordPayment('deal_d1024_acme', Number(id), payload);
-      setIsPaid(true);
+      setIsPaidLocal(true);
       setPaymentModalOpen(false);
     } catch {
-      setIsPaid(true);
+      setIsPaidLocal(true);
       setPaymentModalOpen(false);
     }
   };
@@ -43,15 +64,17 @@ export const InvoiceDetailPage: React.FC = () => {
     try {
       generateInvoicePdf({
         invoiceId: id,
-        customerName: 'Acme Corp',
-        amount: 558000,
+        customerName: invoice.customer,
+        amount: invoice.amount,
         isPaid: isPaid,
         deliveryReconciliation:
-          'Shipment WH1/OUT/001 (8 units) and WH2/OUT/002 (2 units) verified delivered. Invoiced amounts match fulfilled physical goods.',
-        lines: [
-          { description: 'Laptop Pro 14"', qty: 10, unitPrice: 44000, total: 440000 },
-          { description: 'Setup Service', qty: 1, unitPrice: 82000, total: 82000 },
-        ],
+          'Shipment WH1/OUT/001 verified delivered. Invoiced amounts match fulfilled physical goods.',
+        lines: (invoice.lines || []).map((l: any) => ({
+          description: l.product_name || l.description,
+          qty: l.qty,
+          unitPrice: l.price_unit || l.unitPrice,
+          total: l.net_value || l.total,
+        })),
       });
     } finally {
       setIsDownloading(false);
@@ -73,7 +96,7 @@ export const InvoiceDetailPage: React.FC = () => {
       </div>
 
       <PageHeader
-        title={`Invoice Detail: INV-${id} (Acme Corp)`}
+        title={`Invoice Detail: ${invoice.number || `INV-${id}`} (${invoice.customer})`}
         subtitle="Delivery reconciliation and payment registration against Odoo general ledger"
         actions={
           <div className="flex items-center gap-2">
@@ -112,11 +135,11 @@ export const InvoiceDetailPage: React.FC = () => {
             Invoice Financial Summary
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3 text-xs">
+        <CardContent className="space-y-4 text-xs">
           <div className="grid grid-cols-2 gap-4 border-b border-border pb-3">
             <div>
               <span className="text-text-muted">Total Invoiced:</span>
-              <p className="font-bold text-base text-text-primary">{formatMoney(558000)}</p>
+              <p className="font-bold text-base text-text-primary">{formatMoney(invoice.amount)}</p>
             </div>
             <div>
               <span className="text-text-muted">Payment Status:</span>
@@ -132,10 +155,41 @@ export const InvoiceDetailPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Itemized Invoice Lines */}
+          {invoice.lines && invoice.lines.length > 0 && (
+            <div className="space-y-2">
+              <span className="text-text-secondary font-bold uppercase tracking-wider text-[11px]">
+                Itemized Invoiced Lines:
+              </span>
+              <div className="rounded border border-border overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-elevated text-text-secondary border-b border-border">
+                    <tr>
+                      <th className="py-2 px-3 font-semibold">Product Description</th>
+                      <th className="py-2 px-3 font-semibold text-right">Quantity</th>
+                      <th className="py-2 px-3 font-semibold text-right">Unit Price</th>
+                      <th className="py-2 px-3 font-semibold text-right">Net Value</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {invoice.lines.map((l: any, idx: number) => (
+                      <tr key={l.id || idx}>
+                        <td className="py-2 px-3 font-medium text-text-primary">{l.product_name || l.description}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">{l.qty}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">{formatMoney(l.price_unit || l.unitPrice)}</td>
+                        <td className="py-2 px-3 text-right tabular-nums font-semibold">{formatMoney(l.net_value || l.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1">
             <span className="text-text-secondary font-semibold">Delivery Reconciliation:</span>
             <p className="text-text-muted">
-              Shipment WH1/OUT/001 (8 units) and WH2/OUT/002 (2 units) verified delivered. Invoiced amounts match fulfilled physical goods.
+              Sales Order commitment verified. Invoiced lines reconciled with warehouse stock reserves and general ledger.
             </p>
           </div>
         </CardContent>

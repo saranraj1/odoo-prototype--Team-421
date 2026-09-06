@@ -9,7 +9,7 @@ export const RequirePortalAuth: React.FC<{ children: React.ReactNode }> = ({ chi
   const location = useLocation();
 
   if (!hasPortalAuth && !hasInternalAuth) {
-    return <Navigate to="/portal/login" state={{ from: location }} replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;

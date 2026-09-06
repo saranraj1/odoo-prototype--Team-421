@@ -1,4 +1,4 @@
-﻿import { apiClient } from '../client';
+import { apiClient } from '../client';
 
 export const negotiationApi = {
   getRequests: (dealId: string): Promise<any[]> =>
@@ -7,7 +7,15 @@ export const negotiationApi = {
   respond: (
     dealId: string,
     requestId: string,
-    payload: { decision: 'ACCEPT' | 'REJECT' | 'COUNTER'; message?: string; counter_value?: number }
+    payload: {
+      decision: 'ACCEPT' | 'REJECT' | 'COUNTER';
+      message?: string;
+      counter_value?: number;
+      actor_name?: string;
+      actor_role?: string;
+      type?: string;
+      target_amount?: number;
+    }
   ): Promise<any> =>
     apiClient(`/deals/${dealId}/negotiations/${requestId}/respond`, {
       method: 'POST',

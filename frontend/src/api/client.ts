@@ -66,11 +66,7 @@ export async function apiClient<T = any>(
     // Only redirect to login if this was not an explicit login attempt
     if (response.status === 401 && !path.includes('/auth/login') && !path.includes('/portal/auth/login')) {
       sessionStorage.removeItem(tokenKey);
-      if (isPortal) {
-        window.location.href = '/portal/login';
-      } else {
-        window.location.href = '/login';
-      }
+      window.location.href = '/login';
     }
 
     throw new ApiClientError(response.status, errorEnvelope);

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Bell, LogOut, User as UserIcon, Shield, Layers, ExternalLink } from 'lucide-react';
+import { Bell, LogOut, User as UserIcon, Shield } from 'lucide-react';
 import { useAuthStore } from '@/features/auth/authStore';
 import { getTabsForRole, UserRole } from '@/lib/rbac';
 import { NotificationsDrawer } from './NotificationsDrawer';
 import { useQuery } from '@tanstack/react-query';
 import { notificationsApi } from '@/api/endpoints/notifications';
 import { queryKeys } from '@/api/queryKeys';
+
+import { queryClient } from '@/app/providers';
 
 export const TopNav: React.FC = () => {
   const { user, clearAuth } = useAuthStore();
@@ -22,6 +24,7 @@ export const TopNav: React.FC = () => {
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   const handleLogout = () => {
+    queryClient.clear();
     clearAuth();
     navigate('/login');
   };
@@ -30,33 +33,39 @@ export const TopNav: React.FC = () => {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-14 w-full items-center justify-between border-b border-border bg-white px-6 text-text-primary shadow-xs select-none backdrop-blur-xs bg-white/95">
+      <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-slate-200/80 bg-white/95 px-4 sm:px-6 lg:px-8 text-slate-800 shadow-xs select-none backdrop-blur-md">
         {/* Brand & Tabs */}
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-5 min-w-0 flex-1">
           <div
             onClick={() => navigate('/')}
-            className="flex items-center gap-2 cursor-pointer font-bold text-base tracking-tight text-slate-900"
+            className="flex items-center gap-2.5 cursor-pointer shrink-0 group py-1"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white shadow-xs">
-              <Shield className="h-4 w-4 fill-white" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-brand to-sky-600 text-white shadow-xs shadow-brand/20 group-hover:scale-105 transition-transform duration-200">
+              <Shield className="h-5 w-5 fill-white" />
             </div>
             <div className="flex flex-col">
-              <span className="leading-tight">DealFlow<span className="text-brand">360</span></span>
-              <span className="text-[10px] font-normal text-text-muted leading-tight">Sales Governance</span>
+              <span className="font-bold text-base tracking-tight text-slate-900 leading-tight">
+                DealFlow<span className="text-brand">360</span>
+              </span>
+              <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider leading-tight">
+                Sales Governance
+              </span>
             </div>
           </div>
 
-          <nav className="flex items-center space-x-1">
+          <div className="h-6 w-px bg-slate-200 hidden md:block shrink-0" />
+
+          <nav className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-1">
             {allowedTabs.map((tab) => (
               <NavLink
                 key={tab.path}
                 to={tab.path}
                 end={tab.path === '/'}
                 className={({ isActive }) =>
-                  `rounded-md px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
+                  `whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 ${
                     isActive
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      ? 'bg-slate-900 text-white font-semibold shadow-xs shadow-slate-900/10'
+                      : 'text-slate-600 hover:bg-slate-100/90 hover:text-slate-900'
                   }`
                 }
               >
@@ -67,41 +76,34 @@ export const TopNav: React.FC = () => {
         </div>
 
         {/* Right side: Notifications & User Menu */}
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => navigate('/portal/quotations')}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
-            title="Preview B2B Customer Portal"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Customer Portal</span>
-          </button>
-
+        <div className="flex items-center gap-3 shrink-0 ml-4">
           <button
             onClick={() => setDrawerOpen(true)}
-            className="relative rounded-lg p-2 text-text-secondary hover:bg-elevated hover:text-text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-brand/30 cursor-pointer"
+            className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-brand/30 cursor-pointer"
             aria-label={`Notifications, ${unreadCount} unread`}
           >
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white shadow-xs">
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[1rem] px-1 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white shadow-xs">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </button>
 
           {user && (
-            <div className="flex items-center gap-2.5 pl-2 border-l border-border">
-              <div className="flex items-center gap-2 text-xs font-medium text-text-primary bg-slate-50 border border-border px-2.5 py-1 rounded-lg">
-                <UserIcon className="h-3.5 w-3.5 text-text-muted" />
-                <span className="font-semibold">{user.name}</span>
+            <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">
+              <div className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 border border-slate-200/80 px-2.5 py-1.5 rounded-lg shadow-2xs">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-slate-600 font-bold text-[10px]">
+                  {user.name ? user.name.charAt(0).toUpperCase() : <UserIcon className="h-3 w-3" />}
+                </div>
+                <span className="font-semibold text-slate-800 max-w-[120px] truncate">{user.name}</span>
                 <span className="rounded bg-brand/10 border border-brand/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand">
                   {user.role}
                 </span>
               </div>
               <button
                 onClick={handleLogout}
-                className="rounded-lg p-1.5 text-text-muted hover:bg-rose-50 hover:text-danger transition-colors border border-transparent hover:border-rose-200"
+                className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 border border-transparent transition-colors cursor-pointer"
                 title="Log out"
                 aria-label="Log out"
               >

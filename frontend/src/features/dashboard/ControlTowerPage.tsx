@@ -11,6 +11,7 @@ import { formatMoney, formatRelativeDate } from '@/lib/format';
 import type { ActionQueueItem } from '@/api/types';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 import { useAuthStore } from '@/features/auth/authStore';
+import { Plus } from 'lucide-react';
 
 export const ControlTowerPage: React.FC = () => {
   const navigate = useNavigate();
@@ -134,6 +135,19 @@ export const ControlTowerPage: React.FC = () => {
           user?.role === 'ADMIN'
             ? 'Enterprise-wide commercial governance, cross-department oversight, and SLA monitors'
             : 'Executive governance cockpit, active SLA monitors, and real-time risk triage'
+        }
+        actions={
+          (user?.role === 'SALES_MANAGER' || user?.role === 'ADMIN') ? (
+            <Button
+              size="sm"
+              onClick={() => navigate('/quotations/new')}
+              className="gap-1.5"
+              title="Create a new quotation for a customer"
+            >
+              <Plus className="h-4 w-4" />
+              New Quotation
+            </Button>
+          ) : undefined
         }
       />
 

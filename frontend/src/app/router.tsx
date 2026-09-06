@@ -1,5 +1,5 @@
 import React from 'react';
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, useLocation } from 'react-router-dom';
 import { InternalLayout } from './layouts/InternalLayout';
 import { PortalLayout } from './layouts/PortalLayout';
 import { AuthLayout } from './layouts/AuthLayout';
@@ -7,9 +7,11 @@ import { RequireAuth } from './guards/RequireAuth';
 import { RequireRole } from './guards/RequireRole';
 import { RequirePortalAuth } from './guards/RequirePortalAuth';
 
+// Landing Page
+import { LandingPage } from '@/features/landing/LandingPage';
+
 // Auth
 import { LoginPage } from '@/features/auth/LoginPage';
-import { PortalLoginPage } from '@/features/portal/PortalLoginPage';
 import { PortalVerifyPage } from '@/features/portal/PortalVerifyPage';
 
 // Dashboards
@@ -57,6 +59,7 @@ import { PortalMessagesPage } from '@/features/portal/PortalMessagesPage';
 import { PortalProfilePage } from '@/features/portal/PortalProfilePage';
 
 import { useAuthStore } from '@/features/auth/authStore';
+import { RouteErrorBoundary } from '@/components/feedback/RouteErrorBoundary';
 
 const DashboardRouter: React.FC = () => {
   const { user } = useAuthStore();
@@ -66,10 +69,35 @@ const DashboardRouter: React.FC = () => {
   return <SalesDashboardPage />;
 };
 
+const RootShell: React.FC = () => {
+  const { isAuthenticated } = useAuthStore();
+  const location = useLocation();
+
+  // If visitor is at root "/" and not authenticated, display the Landing Page!
+  if (!isAuthenticated && location.pathname === '/') {
+    return <LandingPage />;
+  }
+
+  // If authenticated, render internal authenticated layout
+  return (
+    <RequireAuth>
+      <InternalLayout />
+    </RequireAuth>
+  );
+};
+
 export const router = createBrowserRouter([
+  // Standalone Public Landing Page
+  {
+    path: '/landing',
+    element: <LandingPage />,
+    errorElement: <RouteErrorBoundary />,
+  },
+
   // Internal Auth
   {
     element: <AuthLayout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/enterprise-login', element: <LoginPage /> },
@@ -79,11 +107,8 @@ export const router = createBrowserRouter([
   // Internal Shell
   {
     path: '/',
-    element: (
-      <RequireAuth>
-        <InternalLayout />
-      </RequireAuth>
-    ),
+    element: <RootShell />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, element: <DashboardRouter /> },
       { path: 'quotations', element: <QuotationsListPage /> },
@@ -113,22 +138,14 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // Portal Auth
+  // Portal Auth Redirects
   {
     path: '/portal/login',
-    element: (
-      <AuthLayout />
-    ),
-    children: [
-      { index: true, element: <PortalLoginPage /> },
-    ],
+    element: <Navigate to="/login" replace />,
   },
   {
     path: '/customer-login',
-    element: <AuthLayout />,
-    children: [
-      { index: true, element: <PortalLoginPage /> },
-    ],
+    element: <Navigate to="/login" replace />,
   },
   {
     path: '/portal/verify',
@@ -143,6 +160,7 @@ export const router = createBrowserRouter([
         <PortalLayout />
       </RequirePortalAuth>
     ),
+    errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, element: <Navigate to="/portal/quotations" replace /> },
       { path: 'quotations', element: <PortalQuotationsListPage /> },

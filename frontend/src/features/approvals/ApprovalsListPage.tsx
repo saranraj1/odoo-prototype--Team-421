@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '@/features/auth/authStore';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, ColumnDef } from '@/components/data/DataTable';
 import { RiskBadge } from '@/components/data/RiskBadge';
@@ -12,6 +13,10 @@ import { queryKeys } from '@/api/queryKeys';
 export const ApprovalsListPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuthStore();
+  const isFinance = user?.role === 'FINANCE';
+  const isManager = user?.role === 'SALES_MANAGER';
+  const isAdmin = user?.role === 'ADMIN';
 
   // Initialize status from URL search query (?status=pending -> PENDING)
   const initialStatus = searchParams.get('status')?.toUpperCase();
@@ -44,27 +49,30 @@ export const ApprovalsListPage: React.FC = () => {
   const returnedCount = allApprovals.length > 0 ? allApprovals.filter((i) => i.status === 'RETURNED').length : 1;
   const approvedCount = allApprovals.length > 0 ? allApprovals.filter((i) => i.status === 'APPROVED').length : 5;
 
-  // Canonical fallback items guaranteeing 100% data consistency
+  // Canonical fallback items — role-aware so Finance always sees their queue
   const fallbackAll = [
+    // Finance-stage items
     {
-      id: 'deal_d1024_acme',
-      reference: 'D-1024',
-      customer: 'Acme Corp',
-      risk_score: 56.0,
+      id: 'deal_d1031_nexus',
+      reference: 'D-1031',
+      customer: 'Nexus Pharma Ltd',
+      risk_score: 52.0,
       severity: 'HIGH',
-      stage: 'Sales Manager',
-      assigned_to: 'Sunita Sales Manager North',
+      stage: 'Finance',
+      assigned_to: 'Vikram Finance Officer',
       status: 'PENDING',
+      amount: 1250000,
     },
     {
-      id: 'deal_d1023_beta',
-      reference: 'D-1023',
-      customer: 'Beta Industries',
-      risk_score: 29.7,
+      id: 'deal_d1028_vertex',
+      reference: 'D-1028',
+      customer: 'Vertex Technologies',
+      risk_score: 34.5,
       severity: 'MEDIUM',
-      stage: 'Sales Manager',
-      assigned_to: 'Sales Manager South',
+      stage: 'Finance',
+      assigned_to: 'Vikram Finance Officer',
       status: 'PENDING',
+      amount: 870000,
     },
     {
       id: 'deal_d1021_delta',
@@ -75,16 +83,7 @@ export const ApprovalsListPage: React.FC = () => {
       stage: 'Finance',
       assigned_to: 'Vikram Finance Officer',
       status: 'PENDING',
-    },
-    {
-      id: 'deal_d1019_gamma',
-      reference: 'D-1019',
-      customer: 'Gamma LLC',
-      risk_score: 38.0,
-      severity: 'MEDIUM',
-      stage: 'Sales Manager',
-      assigned_to: 'Sales Rep One',
-      status: 'RETURNED',
+      amount: 780000,
     },
     {
       id: 'deal_d1018_zeta',
@@ -95,12 +94,67 @@ export const ApprovalsListPage: React.FC = () => {
       stage: 'Finance',
       assigned_to: 'Vikram Finance Officer',
       status: 'APPROVED',
+      amount: 450000,
+    },
+    {
+      id: 'deal_d1026_prism',
+      reference: 'D-1026',
+      customer: 'Prism Analytics',
+      risk_score: 19.0,
+      severity: 'LOW',
+      stage: 'Finance',
+      assigned_to: 'Vikram Finance Officer',
+      status: 'APPROVED',
+      amount: 480000,
+    },
+    // Manager-stage items
+    {
+      id: 'deal_d1024_acme',
+      reference: 'D-1024',
+      customer: 'Acme Corp',
+      risk_score: 56.0,
+      severity: 'HIGH',
+      stage: 'Sales Manager',
+      assigned_to: 'Sunita Sales Manager North',
+      status: 'PENDING',
+      amount: 558000,
+    },
+    {
+      id: 'deal_d1023_beta',
+      reference: 'D-1023',
+      customer: 'Beta Industries',
+      risk_score: 29.7,
+      severity: 'MEDIUM',
+      stage: 'Sales Manager',
+      assigned_to: 'Sales Manager South',
+      status: 'PENDING',
+      amount: 420000,
+    },
+    {
+      id: 'deal_d1019_gamma',
+      reference: 'D-1019',
+      customer: 'Gamma LLC',
+      risk_score: 38.0,
+      severity: 'MEDIUM',
+      stage: 'Sales Manager',
+      assigned_to: 'Sales Rep One',
+      status: 'RETURNED',
+      amount: 310000,
     },
   ];
 
+  // Filter fallback by user role (matching same logic as the API handler)
+  const roleFallback = isFinance
+    ? fallbackAll.filter((i) => i.stage === 'Finance')
+    : isManager
+    ? fallbackAll.filter((i) => i.stage === 'Sales Manager')
+    : isAdmin
+    ? fallbackAll
+    : fallbackAll.filter((i) => i.status === 'RETURNED');
+
   const items = approvalsData.length > 0
     ? approvalsData
-    : fallbackAll.filter((item) => {
+    : roleFallback.filter((item) => {
         if (filterPendingOnly || statusFilter === 'PENDING') return item.status === 'PENDING';
         if (statusFilter === 'RETURNED') return item.status === 'RETURNED';
         if (statusFilter === 'APPROVED') return item.status === 'APPROVED';
@@ -161,8 +215,20 @@ export const ApprovalsListPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Approvals (List)"
-        subtitle="Manage hierarchical approval queues and policy exception requests"
+        title={
+          isFinance
+            ? 'Finance Approvals Queue'
+            : isManager
+            ? 'Sales Manager Approvals Queue'
+            : isAdmin
+            ? 'Admin Approval Oversight'
+            : 'Approvals (List)'
+        }
+        subtitle={
+          isFinance
+            ? 'Review high-value quotations requiring Commercial Finance Director sign-off'
+            : 'Manage hierarchical approval queues and policy exception requests'
+        }
       />
 
       {/* Filter Counters */}

@@ -97,6 +97,98 @@ def health_check() -> Dict[str, Any]:
 
 
 # -----------------------------------------------------------------------------
+# Authentication & Identity Endpoints
+# -----------------------------------------------------------------------------
+
+class LoginPayload(BaseModel):
+    login: str
+    password: str
+
+KNOWN_USERS = {
+    "admin@dealflow.test": {"id": 1, "name": "Devendra Prasad (Principal Enterprise Admin)", "role": "ADMIN", "email": "admin@dealflow.test"},
+    "admin": {"id": 1, "name": "Devendra Prasad (Principal Enterprise Admin)", "role": "ADMIN", "email": "admin@dealflow.test"},
+    "rep1@dealflow.test": {"id": 4, "name": "Sales Rep One", "role": "SALES_REP", "email": "rep1@dealflow.test"},
+    "sales.rep": {"id": 4, "name": "Sales Rep One", "role": "SALES_REP", "email": "rep1@dealflow.test"},
+    "manager1@dealflow.test": {"id": 3, "name": "Sunita Rao (Regional Sales Director - North)", "role": "SALES_MANAGER", "email": "manager1@dealflow.test"},
+    "sales.manager": {"id": 3, "name": "Sunita Rao (Regional Sales Director - North)", "role": "SALES_MANAGER", "email": "manager1@dealflow.test"},
+    "finance@dealflow.test": {"id": 2, "name": "Vikram Finance Officer", "role": "FINANCE", "email": "finance@dealflow.test"},
+    "finance": {"id": 2, "name": "Vikram Finance Officer", "role": "FINANCE", "email": "finance@dealflow.test"},
+    "buyer@acme.test": {"id": 101, "name": "Acme Global Technologies", "role": "CUSTOMER", "email": "buyer@acme.test", "partner_id": 101},
+    "customer.demo": {"id": 101, "name": "Acme Global Technologies", "role": "CUSTOMER", "email": "buyer@acme.test", "partner_id": 101},
+}
+
+@app.post("/api/v1/auth/login", tags=["Auth"])
+@app.post("/auth/login", tags=["Auth"])
+def login_endpoint(payload: LoginPayload) -> Dict[str, Any]:
+    login_clean = payload.login.strip().lower()
+    user = KNOWN_USERS.get(login_clean)
+    if not user:
+        for k, u in KNOWN_USERS.items():
+            if k.split("@")[0].lower() == login_clean:
+                user = u
+                break
+    if not user:
+        role = "ADMIN" if "admin" in login_clean else ("SALES_MANAGER" if "manager" in login_clean else ("FINANCE" if "finance" in login_clean else ("CUSTOMER" if "customer" in login_clean or "buyer" in login_clean else "SALES_REP")))
+        user = {
+            "id": 99,
+            "name": login_clean.split("@")[0].capitalize(),
+            "role": role,
+            "email": payload.login,
+        }
+
+    token = f"backend_jwt_{user['role'].lower()}_{user['id']}"
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": 43200,
+        "user": {
+            "id": user["id"],
+            "odoo_user_id": user["id"],
+            "name": user["name"],
+            "role": user["role"],
+            "company_id": 1,
+            "email": user["email"],
+            "is_active": True,
+        },
+    }
+
+@app.post("/api/v1/portal/auth/login", tags=["Auth"])
+@app.post("/portal/auth/login", tags=["Auth"])
+def portal_login_endpoint(payload: LoginPayload) -> Dict[str, Any]:
+    res = login_endpoint(payload)
+    u = res["user"]
+    return {
+        "access_token": res["access_token"],
+        "token_type": "bearer",
+        "is_internal": u["role"] != "CUSTOMER",
+        "user": u,
+        "partner": {
+            "id": u.get("partner_id", u["id"]),
+            "name": u["name"],
+            "email": u.get("email"),
+        },
+    }
+
+@app.get("/api/v1/auth/me", tags=["Auth"])
+@app.get("/auth/me", tags=["Auth"])
+def auth_me_endpoint() -> Dict[str, Any]:
+    return {
+        "id": 1,
+        "odoo_user_id": 1,
+        "name": "Devendra Prasad (Principal Enterprise Admin)",
+        "role": "ADMIN",
+        "company_id": 1,
+        "email": "admin@dealflow.test",
+        "is_active": True,
+    }
+
+@app.post("/api/v1/auth/logout", tags=["Auth"])
+@app.post("/auth/logout", tags=["Auth"])
+def logout_endpoint() -> Dict[str, Any]:
+    return {"message": "Logged out successfully"}
+
+
+# -----------------------------------------------------------------------------
 # Deal Guardian Evaluation Endpoints
 # -----------------------------------------------------------------------------
 
@@ -498,6 +590,88 @@ def cancel_odoo_subscription(subscription_id: int, payload: Optional[Dict[str, A
             "message": "Subscription cancelled successfully and updated in database",
         },
     }
+
+
+
+# -----------------------------------------------------------------------------
+# Odoo Product Catalog, Warehouse, & Master Data Endpoints
+# -----------------------------------------------------------------------------
+
+FASTAPI_PRODUCT_CATALOG = [
+    {"id": 101, "default_code": "LAPTOP-01", "name": "Enterprise Laptop Pro 14\"", "category_id": 1, "category_name": "Hardware", "type": "STOCKABLE", "list_price": 125000, "standard_price": 92000, "tax": 18, "uom": "Units", "qty_available_by_warehouse": {"Main Warehouse": 18, "East Depot": 12, "West Hub": 8}, "total_qty": 38},
+    {"id": 102, "default_code": "LAPTOP-02", "name": "UltraBook Executive 13\"", "category_id": 1, "category_name": "Hardware", "type": "STOCKABLE", "list_price": 95000, "standard_price": 71000, "tax": 18, "uom": "Units", "qty_available_by_warehouse": {"Main Warehouse": 14, "East Depot": 9, "West Hub": 5}, "total_qty": 28},
+    {"id": 103, "default_code": "SRV-RACK-01", "name": "Cloud Rack Server X1", "category_id": 1, "category_name": "Hardware", "type": "STOCKABLE", "list_price": 450000, "standard_price": 310000, "tax": 18, "uom": "Units", "qty_available_by_warehouse": {"Main Warehouse": 6, "East Depot": 3, "West Hub": 4}, "total_qty": 13},
+    {"id": 104, "default_code": "AI-WS-01", "name": "AI Edge Workstation Dual-GPU", "category_id": 1, "category_name": "Hardware", "type": "STOCKABLE", "list_price": 320000, "standard_price": 235000, "tax": 18, "uom": "Units", "qty_available_by_warehouse": {"Main Warehouse": 8, "East Depot": 4, "West Hub": 6}, "total_qty": 18},
+    {"id": 105, "default_code": "MON-01", "name": "Enterprise Monitor 27\" 4K", "category_id": 1, "category_name": "Hardware", "type": "STOCKABLE", "list_price": 55000, "standard_price": 38000, "tax": 18, "uom": "Units", "qty_available_by_warehouse": {"Main Warehouse": 35, "East Depot": 20, "West Hub": 15}, "total_qty": 70},
+    {"id": 106, "default_code": "DOCK-01", "name": "Universal Thunderbolt 4 Dock", "category_id": 4, "category_name": "Accessories", "type": "STOCKABLE", "list_price": 18000, "standard_price": 9500, "tax": 18, "uom": "Units", "qty_available_by_warehouse": {"Main Warehouse": 40, "East Depot": 25, "West Hub": 30}, "total_qty": 95},
+    {"id": 107, "default_code": "IOT-GW-01", "name": "Industrial IoT Edge Gateway", "category_id": 1, "category_name": "Hardware", "type": "STOCKABLE", "list_price": 85000, "standard_price": 58000, "tax": 18, "uom": "Units", "qty_available_by_warehouse": {"Main Warehouse": 22, "East Depot": 10, "West Hub": 12}, "total_qty": 44},
+    {"id": 108, "default_code": "GPU-CLUS-01", "name": "High-Performance GPU Cluster Node", "category_id": 1, "category_name": "Hardware", "type": "STOCKABLE", "list_price": 850000, "standard_price": 620000, "tax": 18, "uom": "Units", "qty_available_by_warehouse": {"Main Warehouse": 4, "East Depot": 2, "West Hub": 1}, "total_qty": 7},
+    {"id": 109, "default_code": "ACC-PERIPH", "name": "Wireless Commercial Peripherals Kit", "category_id": 4, "category_name": "Accessories", "type": "STOCKABLE", "list_price": 8500, "standard_price": 3200, "tax": 18, "uom": "Sets", "qty_available_by_warehouse": {"Main Warehouse": 60, "East Depot": 45, "West Hub": 30}, "total_qty": 135},
+    {"id": 201, "default_code": "SRV-IMPL", "name": "Cloud Architecture Setup Service", "category_id": 2, "category_name": "Services", "type": "SERVICE", "list_price": 150000, "standard_price": 85000, "tax": 18, "uom": "Hours", "qty_available_by_warehouse": {}, "total_qty": 999},
+    {"id": 202, "default_code": "SRV-SLA", "name": "Premium 24x7 Support & SLA", "category_id": 2, "category_name": "Services", "type": "SERVICE", "list_price": 75000, "standard_price": 32000, "tax": 18, "uom": "Annual", "is_recurring": True, "qty_available_by_warehouse": {}, "total_qty": 999},
+    {"id": 203, "default_code": "SRV-DEVOPS", "name": "DevOps Implementation Consulting", "category_id": 2, "category_name": "Services", "type": "SERVICE", "list_price": 220000, "standard_price": 120000, "tax": 18, "uom": "Project", "qty_available_by_warehouse": {}, "total_qty": 999},
+    {"id": 204, "default_code": "SRV-SEC", "name": "CyberSecurity Audit & PenTest", "category_id": 2, "category_name": "Services", "type": "SERVICE", "list_price": 180000, "standard_price": 95000, "tax": 18, "uom": "Project", "qty_available_by_warehouse": {}, "total_qty": 999},
+    {"id": 205, "default_code": "SRV-DBHA", "name": "Managed Database High-Availability Setup", "category_id": 2, "category_name": "Services", "type": "SERVICE", "list_price": 120000, "standard_price": 65000, "tax": 18, "uom": "Project", "qty_available_by_warehouse": {}, "total_qty": 999},
+    {"id": 301, "default_code": "SUB-SAAS", "name": "DealFlow360 Enterprise SaaS Seat", "category_id": 3, "category_name": "Subscriptions", "type": "SERVICE", "list_price": 4500, "standard_price": 900, "tax": 18, "uom": "Monthly/User", "is_recurring": True, "qty_available_by_warehouse": {}, "total_qty": 999},
+    {"id": 302, "default_code": "SUB-AIOPS", "name": "AI Ops Continuous Monitoring Plan", "category_id": 3, "category_name": "Subscriptions", "type": "SERVICE", "list_price": 35000, "standard_price": 8500, "tax": 18, "uom": "Monthly", "is_recurring": True, "qty_available_by_warehouse": {}, "total_qty": 999},
+]
+
+@app.get("/api/v1/odoo/products", tags=["Odoo Catalog"])
+@app.get("/odoo/products", tags=["Odoo Catalog"])
+def get_odoo_products(category: Optional[str] = None, q: Optional[str] = None) -> Dict[str, Any]:
+    prods = FASTAPI_PRODUCT_CATALOG
+    if category and category != "all":
+        prods = [p for p in prods if str(p["category_id"]) == category or p["category_name"].lower() == category.lower()]
+    if q:
+        q_lower = q.lower()
+        prods = [p for p in prods if q_lower in p["name"].lower() or q_lower in p["default_code"].lower()]
+    return {"success": True, "data": prods}
+
+@app.get("/api/v1/odoo/products/{product_id}", tags=["Odoo Catalog"])
+@app.get("/odoo/products/{product_id}", tags=["Odoo Catalog"])
+def get_odoo_product_detail(product_id: int) -> Dict[str, Any]:
+    prod = next((p for p in FASTAPI_PRODUCT_CATALOG if p["id"] == product_id), FASTAPI_PRODUCT_CATALOG[0])
+    return {"success": True, "data": prod}
+
+@app.get("/api/v1/odoo/categories", tags=["Odoo Catalog"])
+@app.get("/odoo/categories", tags=["Odoo Catalog"])
+def get_odoo_categories() -> Dict[str, Any]:
+    return {
+        "success": True,
+        "data": [
+            {"id": 1, "name": "Hardware"},
+            {"id": 2, "name": "Services"},
+            {"id": 3, "name": "Subscriptions"},
+            {"id": 4, "name": "Accessories"},
+        ],
+    }
+
+@app.get("/api/v1/odoo/warehouses", tags=["Odoo Catalog"])
+@app.get("/odoo/warehouses", tags=["Odoo Catalog"])
+def get_odoo_warehouses(with_stock: Optional[bool] = False) -> Dict[str, Any]:
+    return {
+        "success": True,
+        "data": [
+            {"id": 1, "name": "Main Warehouse", "code": "WH1", "location": "Austin Central (WH1/Stock)"},
+            {"id": 2, "name": "East Depot", "code": "WH2", "location": "New York Regional (WH2/Stock)"},
+            {"id": 3, "name": "West Hub", "code": "WH3", "location": "San Francisco Hub (WH3/Stock)"},
+        ],
+    }
+
+@app.get("/api/v1/odoo/partners", tags=["Odoo Catalog"])
+@app.get("/odoo/partners", tags=["Odoo Catalog"])
+def get_odoo_partners(q: Optional[str] = None) -> Dict[str, Any]:
+    partners = [
+        {"id": 1, "odoo_id": 1, "name": "Acme Corp", "tier_code": "GOLD", "email": "buyer@acme.test", "discount_ceiling": 15},
+        {"id": 2, "odoo_id": 2, "name": "Beta Industries", "tier_code": "SILVER", "email": "buyer@beta.test", "discount_ceiling": 12},
+        {"id": 3, "odoo_id": 3, "name": "Nova Retail", "tier_code": "BRONZE", "email": "buyer@gamma.test", "discount_ceiling": 10},
+        {"id": 4, "odoo_id": 4, "name": "Delta Corp International", "tier_code": "SILVER", "email": "procurement@delta-corp.com", "discount_ceiling": 12},
+        {"id": 5, "odoo_id": 5, "name": "Apex Systems", "tier_code": "PLATINUM", "email": "buyer@apex.test", "discount_ceiling": 20},
+    ]
+    if q:
+        q_lower = q.lower()
+        partners = [p for p in partners if q_lower in p["name"].lower() or q_lower in p["email"].lower()]
+    return {"success": True, "data": partners}
 
 
 # -----------------------------------------------------------------------------
